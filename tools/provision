@@ -10,9 +10,11 @@ if [ "$EUID" -eq 0 ]; then
     exit 1
 fi
 
-if [ -n "$TRAVIS" ]; then
+if [ "$TRAVIS" = true ]; then
     PYTHON=python
 else
+    # Default to Python 3 if the env is not Travis
+    # To use Python 2, set this env var to python2
     PYTHON=python3
 fi
 
@@ -29,7 +31,7 @@ echo "PROVISIONING STARTING." >> $LOG_PATH
 # PYTHONUNBUFFERED is important to ensure that tracebacks don't get
 # lost far above where they should be in the output.
 export PYTHONUNBUFFERED=1
-"$PYTHON" "$PROVISION_PATH" $@ 2>&1 | tee -a "$LOG_PATH"
+$PYTHON "$PROVISION_PATH" $@ 2>&1 | tee -a "$LOG_PATH"
 failed=${PIPESTATUS[0]}
 
 if [ $failed = 1 ]; then

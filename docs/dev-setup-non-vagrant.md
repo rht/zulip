@@ -298,11 +298,11 @@ For managing Zulip's python dependencies, we recommend using
 You must create a Python 3 virtualenv.  You must also install appropriate
 python packages in it.
 
-You should either install the virtualenv in `/srv`, or put a symlink to it in
+You should either install the virtualenv in `/srv`, or put symlinks to them in
 `/srv`.  If you don't do that, some scripts might not work correctly.
 
 You can run `python3 tools/setup/setup_venvs.py`.  This script will create a
-virtualenv `/srv/zulip-py3-venv`.
+virtualenv /srv/zulip-py3-venv.
 
 If you want to do it manually, here are the steps:
 
