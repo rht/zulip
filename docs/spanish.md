@@ -1,3 +1,4 @@
+:orphan:
 # Spanish Translation Style Guide
 
 Use informal Spanish for translation:

@@ -1,3 +1,4 @@
+:orphan:
 # Chinese translation style guide(中文翻译指南)
 
 ## Note(题记)

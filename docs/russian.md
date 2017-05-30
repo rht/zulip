@@ -1,3 +1,4 @@
+:orphan:
 # Russian Translation Style Guide
 
 Вот некоторые правила, которых стоит придерживаться для поддержания

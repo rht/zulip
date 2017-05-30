@@ -1,3 +1,4 @@
+:orphan:
 # Polish translation style guide
 
 Use semi-formal Polish for translation, some specifics:

@@ -1,3 +1,4 @@
+:orphan:
 # Outgoing email
 
 This page documents everything you need to know about setting up

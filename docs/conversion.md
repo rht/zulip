@@ -1,3 +1,4 @@
+:orphan:
 # Exporting data from a large multi-realm Zulip server
 
 ## Draft status

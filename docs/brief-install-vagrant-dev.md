@@ -1,3 +1,4 @@
+:orphan:
 # Vagrant environment setup (in brief)
 
 Start by cloning this repository: `git clone https://github.com/zulip/zulip.git`

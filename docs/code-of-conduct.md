@@ -1,3 +1,4 @@
+:orphan:
 # Zulip Code of Conduct
 
 Like the technical community as a whole, the Zulip team and community is

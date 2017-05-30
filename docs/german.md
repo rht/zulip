@@ -1,3 +1,4 @@
+:orphan:
 # German translation style guide (Richtlinien für die deutsche Übersetzung)
 
 Thank you for considering to contribute to the German translation!

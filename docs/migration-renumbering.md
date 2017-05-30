@@ -1,3 +1,4 @@
+:orphan:
 # Renumbering Migrations
 When you rebase your development branch off of
 a newer copy of master, and your branch contains
