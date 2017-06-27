@@ -26,15 +26,15 @@ fi
 
 if ! [ -e /usr/bin/realpath ]; then
     # realpath is in coreutils on Xenial, but not in Trusty
-    apt-get install -y realpath
+    brew tap iveney/mocha
+    brew install realpath
 fi
 ZULIP_PATH="$(realpath $(dirname $0)/../..)"
 
 # setup-apt-repo does an `apt-get update`
 "$ZULIP_PATH"/scripts/lib/setup-apt-repo
 
-apt-get -y dist-upgrade $APT_OPTIONS
-apt-get install -y puppet git python python3 python-six python3-six crudini $ADDITIONAL_PACKAGES
+brew install puppet git python python3 python-six python3-six crudini $ADDITIONAL_PACKAGES
 
 # Handle issues around upstart on Ubuntu Xenial
 "$ZULIP_PATH"/scripts/lib/check-upstart
@@ -91,7 +91,6 @@ if [ "$DEPLOYMENT_TYPE" = "dockervoyager" ]; then
 fi
 
 # These server restarting bits should be moveable into puppet-land, ideally
-apt-get -y upgrade
 
 if [ "$has_nginx" = 0 ]; then
     # Check nginx was configured properly now that we've installed it.

@@ -12,9 +12,9 @@
 set -e
 set -x
 
-# Make /home/travis world-readable so the `zulip` user will be able to
+# Make $HOME of `travis` user world-readable so the `zulip` user will be able to
 # read it, since that's where we store our caches.
-sudo chmod a+rX /home/travis
+sudo chmod a+rX $HOME
 
 # Uninstall the unnecessary extra versions of postgres that Travis CI
 # installs since if we don't do this, doing apt upgrades can fail due
