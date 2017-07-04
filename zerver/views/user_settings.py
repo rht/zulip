@@ -48,18 +48,14 @@ def confirm_email_change(request, confirmation_key):
 
         do_change_user_email(obj.user_profile, obj.new_email)
 
-        context = {'support_email': settings.ZULIP_ADMINISTRATOR,
-                   'verbose_support_offers': settings.VERBOSE_SUPPORT_OFFERS,
-                   'realm': obj.realm,
+        context = {'realm': obj.realm,
                    'new_email': new_email,
                    }
         send_email('zerver/emails/notify_change_in_email', old_email,
-                   from_email=settings.DEFAULT_FROM_EMAIL, context=context)
+                   from_email=settings.ZULIP_ADMINISTRATOR, context=context)
 
     ctx = {
         'confirmed': confirmed,
-        'support_email': settings.ZULIP_ADMINISTRATOR,
-        'verbose_support_offers': settings.VERBOSE_SUPPORT_OFFERS,
         'new_email': new_email,
         'old_email': old_email,
     }
@@ -140,7 +136,7 @@ def json_change_settings(request, user_profile,
             pass
         else:
             # Note that check_change_full_name strips the passed name automatically
-            result['full_name'] = check_change_full_name(user_profile, full_name)
+            result['full_name'] = check_change_full_name(user_profile, full_name, user_profile)
 
     return json_success(result)
 

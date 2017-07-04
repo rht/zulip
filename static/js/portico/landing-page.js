@@ -16,6 +16,13 @@ var ScrollTo = function () {
     });
 };
 
+var detectPath = function (pathname) {
+    var match = (pathname || window.location.pathname).match(/(\/\w+)?\/(.+)\//);
+    if (match !== null) {
+        return match[2];
+    }
+};
+
 // these are events that are only to run on the integrations page.
 // check if the page location is integrations.
 var integration_events = function () {
@@ -150,10 +157,8 @@ var events = function () {
     $("body").click(function (e) {
         var $e = $(e.target);
 
-        var should_close = !$e.is("ul, .hamburger") && $e.closest("ul, .hamburger").length === 0;
 
-        // this means that it is in mobile sidebar mode.
-        if ($("nav ul").height() === window.innerHeight && should_close) {
+        if ($e.is("nav ul .exit")) {
             $("nav ul").removeClass("show");
         }
     });
@@ -201,7 +206,7 @@ var events = function () {
             window.location.hash = $(this).data("name");
         });
 
-        if (window.location.pathname === "/apps/") {
+        if (detectPath() === "apps") {
             var hash = function () {
                 return window.location.hash.replace(/^#/, "");
             };
@@ -214,11 +219,11 @@ var events = function () {
         }
     }());
 
-    if (/\/integrations\/*/.test(window.location.pathname)) {
+    if (detectPath() === "integrations") {
         integration_events();
     }
 
-    if (/\/hello\/*/.test(window.location.pathname)) {
+    if (detectPath() === "hello") {
         hello_events();
     }
 };

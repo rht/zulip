@@ -4,27 +4,63 @@ All notable changes to the Zulip server are documented in this file.
 
 ### Unreleased
 
+There are some significant database migrations that will be in the
+next release that can take a long time to run.  Fortunately, these can
+be run without downtime before the rest of the upgrade, by using the
+following postgres queries (run these inside `manage.py dbshell`):
+
+```
+    CREATE INDEX CONCURRENTLY
+    zerver_usermessage_mentioned_message_id
+    ON zerver_usermessage (user_profile_id, message_id)
+    WHERE (flags & 8) != 0;
+
+    CREATE INDEX CONCURRENTLY
+    zerver_usermessage_starred_message_id
+    ON zerver_usermessage (user_profile_id, message_id)
+    WHERE (flags & 2) != 0;
+```
+
+For context on the impact of running these migrations, creating these
+indexes took about 1 minute each with chat.zulip.org's 75M UserMessage
+rows (from `select COUNT(*) from zerver_usermessage;`), with no
+user-facing service disruption.
+
+### 1.6.0 -- 2017-06-06
+
 Highlights:
 
-* Completely redesigned the Zulip settings interfaces to look a lot
-  nicer and be easier to navigate.
-* Completely redesigned the logged-out pages, including
-  login, registration, integrations, etc.  Now organization admins can
-  configure an icon, name, and description for their organization that
-  is displayed on the login/registration pages.
-* Redesigned the numerous UI elements, including the keyboard
-  shortcuts, emoji picker, user profile popovers, sidebars, compose, etc.
-* Massive performance improvements to presence and settings pages,
-  especially for very large organizations (1000+ users).
-* Added typing notifications for private message threads.
-* Added a dozen useful new keyboard shortcuts, from editing messages
-  to emoji reactions to drafts and managing streams.
-* Mobile web now works much better, especially on iOS.
-* Apps documentation now recommends Electron and React Native mobile apps.
-* Added support for users changing their own email address.
-* Added a new saved drafts feature, backed by local storage.
-* Added support for mobile push notifications to be forwarded to the
-  app store mobile apps through zulipchat.com.
+- A complete visual redesign of the logged-out pages, including login,
+registration, integrations, etc.
+- New visual designs for numerous UI elements, including the emoji
+picker, user profile popovers, sidebars, compose, and many more.
+- A complete redesign of the Zulip settings interfaces to look a lot
+nicer and be easier to navigate.
+- Organization admins can now configure the login and registration
+pages to show visitors a nice organization profile with custom text
+and images, written in Markdown.
+- Massively improved performance for presence and settings pages,
+especially for very large organizations (1000+ users).
+- A dozen useful new keyboard shortcuts, from editing messages to
+emoji reactions to drafts and managing streams.
+- Typing notifications for private message threads.
+- Users can now change their own email address.
+- New saved-drafts feature.
+- The server can now run on a machine with as little as 2GB of RAM.
+- The new [Electron desktop app][electron-app] and new
+[React Native mobile app for iOS][ios-app] are now the recommended
+Zulip apps.
+- Mobile web now works much better, especially on iOS.
+- Support for sending mobile push notifications via
+[a new forwarding service][mobile-push]
+- Complete translations for Spanish, German, and Czech (and
+  expanded partial translations for Japanese, Chinese, French,
+  Hungarian, Polish, Dutch, Russian, Bulgarian, Portuguese,
+  Serbian, Malayalam, Korean, and Italian).
+
+[mobile-push]: https://zulip.readthedocs.io/en/latest/prod-mobile-push-notifications.html
+[electron-app]: https://github.com/zulip/zulip-electron/releases
+[ios-app]: https://itunes.apple.com/us/app/zulip/id1203036395
 
 Full feature Changelog:
 
@@ -53,6 +89,8 @@ Full feature Changelog:
 * Added a command-line Slack importer tool using the API.
 * Added new announcement notifications on stream creation.
 * Added support for some newer unicode emoji code points.
+* Added support for users deleting realm emoji they themselves uploaded.
+* Added support for organization administrators deleting messages.
 * Extended data available to mobile apps to cover the entire API.
 * Redesigned bots UI.  Now can change owners and reactivate bots.
 * Redesigned the visuals of code blocks to be prettier.
@@ -72,10 +110,12 @@ Full feature Changelog:
 * Improved subject lines of missed message emails.
 * Improved handling of users trying to login with Oauth without an account.
 * Improved UI of off-the-Internet errors to not be hidden in narrow windows.
+* Improved rate-limiting errors to be more easily machine-readable.
 * Parallelized the backend test suite; now runs 1600 tests in <30s.
 * Fixed numerous bugs and performance issues with stream management.
 * Fixed an issue with the fake emails assigned to bot users.
 * Fixed a major performance issue in stream creation.
+* Fixed numerous minor accessibility issues.
 * Fixed a subtle interaction between click-to-reply and copy-paste.
 * Fixed various formatting issues with /me messages.
 * Fixed numerous real-time sync issues involving users changing their
@@ -89,6 +129,8 @@ Full feature Changelog:
 * Fixed load spikes when email mirror is receiving a lot of traffic.
 * Fixed the ugly grey flicker when scrolling fast on Macs.
 * Fixed previews of GitHub image URLs.
+* Fixed narrowing via clicking on desktop notifications.
+* Fixed Subscribed/Unsubscribed bookends appearing incorrectly.
 * Eliminated the idea of a realm having a canonical domain; now
   there's simply the list of allowed domains for new users.
 * Migrated avatars to a user-id-based storage setup (not email-based).
@@ -106,7 +148,12 @@ Full feature Changelog:
 * Changed `NOREPLY_EMAIL_ADDRESS` setting to `Name <user@example.com>`
   format.
 * Disabled the web tutorial on mobile.
-* Backend test coverage is now 92%, with 100% in views code.
+* Backend test coverage is now 93%, with 100% in views code.
+
+### 1.5.2 -- 2017-06-01
+
+- CVE-2017-0896: Restricting inviting new users to admins was broken.
+- CVE-2015-8861: Insecure old version of handlebars templating engine.
 
 ### 1.5.1 -- 2017-02-07
 

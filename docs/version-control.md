@@ -9,12 +9,12 @@ makes the commit history a much more useful resource for developers
 trying to understand why the code works the way it does, which also
 helps a lot in preventing bugs.
 
-Coherency requirements for any commit:
+Commits must be coherent:
 
 -   It should pass tests (so test updates needed by a change should be
     in the same commit as the original change, not a separate "fix the
     tests that were broken by the last commit" commit).
--   It should be safe to deploy individually, or comment in detail in
+-   It should be safe to deploy individually, or explain in detail in
     the commit message as to why it isn't (maybe with a [manual] tag).
     So implementing a new API endpoint in one commit and then adding the
     security checks in a future commit should be avoided -- the security
@@ -22,9 +22,9 @@ Coherency requirements for any commit:
 -   Error handling should generally be included along with the code that
     might trigger the error.
 -   TODO comments should be in the commit that introduces the issue or
-    functionality with further work required.
+    the functionality with further work required.
 
-When you should be minimal:
+Commits should generally be minimal:
 
 -   Significant refactorings should be done in a separate commit from
     functional changes.
@@ -34,32 +34,33 @@ When you should be minimal:
 -   2 different features should be done in different commits.
 -   If you find yourself writing a commit message that reads like a list
     of somewhat dissimilar things that you did, you probably should have
-    just done 2 commits.
+    just done multiple commits.
 
 When not to be overly minimal:
 
 -   For completely new features, you don't necessarily need to split out
-    new commits for each little subfeature of the new feature. E.g. if
+    new commits for each little subfeature of the new feature. E.g., if
     you're writing a new tool from scratch, it's fine to have the
     initial tool have plenty of options/features without doing separate
     commits for each one. That said, reviewing a 2000-line giant blob of
     new code isn't fun, so please be thoughtful about submitting things
     in reviewable units.
--   Don't bother to split back end commits from front end commits, even
+-   Don't bother to split backend commits from frontend commits, even
     though the backend can often be coherent on its own.
 
 Other considerations:
 
--   Overly fine commits are easily squashed, but not vice versa, so err
-    toward small commits, and the code reviewer can advise on squashing.
+-   Overly fine commits are easy to squash later, but not vice versa.
+    So err toward small commits, and the code reviewer can advise on
+    squashing.
 -   If a commit you write doesn't pass tests, you should usually fix
     that by amending the commit to fix the bug, not writing a new "fix
     tests" commit on top of it.
 
 Zulip expects you to structure the commits in your pull requests to form
-a clean history before we will merge them; it's best to write your
+a clean history before we will merge them.  It's best to write your
 commits following these guidelines in the first place, but if you don't,
-you can always fix your history using git rebase -i.
+you can always fix your history using `git rebase -i`.
 
 Never mix multiple changes together in a single commit, but it's great
 to include several related changes, each in their own commit, in a
@@ -78,52 +79,53 @@ It can take some practice to get used to writing your commits with a
 clean history so that you don't spend much time doing interactive
 rebases. For example, often you'll start adding a feature, and discover
 you need to a refactoring partway through writing the feature. When that
-happens, we recommend stashing your partial feature, do the refactoring,
-commit it, and then finish implementing your feature.
+happens, we recommend you stash your partial feature, do the refactoring,
+commit it, and then unstash and finish implementing your feature.
 
 ## Commit Messages
 
 First, check out
 [these](https://github.com/zulip/zulip/commit/4869e1b0b2bc6d56fcf44b7d0e36ca20f45d0521)
 [examples](https://github.com/zulip/zulip/commit/cd5b38f5d8bdcc1771ad794f37262a61843c56c0)
-of commits with good commit messages.  There are a few mistakes we see
-often that make commit messages less useful than they could be.
+of commits with good commit messages.
 
-- The first line of commit messages should be written in the
-    imperative and be kept relatively short while concisely explaining
-    what the commit does.  And it should be clear about what part of
-    the code is affected.  For example:
+The first line of the commit message is the **summary**. The summary:
+* is written in the imperative (e.g., "Fix ...", "Add ...")
+* is kept short, while concisely explaining what the commit does
+* is clear about what part of the code is affected -- often by prefixing
+  with the name of the subsystem and a colon, like "zjsunit: ..." or "docs: ..."
+* is a complete sentence, ending with a period.
 
-Good:
-``` text
-gather_subscriptions: Fix exception handling bad input.
-zjsunit: Fix running stream_data and node tests individually.
-Add GitLab integration.
-```
+Good summaries:
 
-Bad:
+> *zjsunit: Fix running stream_data and node tests individually.*
 
-``` text
-bugfix
-gather_subscriptions was broken
-fixing exception when given bad input
-fix bug #234.
-```
+> *gather_subscriptions: Fix exception handling bad input.*
 
--   Use present-tense action verbs in your commit messages.
+> *Add GitLab integration.*
 
-Bad:
+Compare "*gather_subscriptions: Fix exception handling bad input.*" with:
 
-``` text
-gather_subscriptions: Fixing exception when given bad input.
-gather_subscriptions: Fixed exception when given bad input.
-```
+* "*gather_subscriptions was broken*", which doesn't explain how
+  it was broken (and isn't in the imperative)
+* "*Fix exception when given bad input*", in which it's impossible to
+  tell from the summary what part of the code is affected
+* "*gather_subscriptions: Fixing exception when given bad input.*",
+  not in the imperative
+* "*gather_subscriptions: Fixed exception when given bad input.*",
+  not in the imperative
 
--   Please use a complete sentence in the summary, ending with a period.
--   The rest of the commit message should be written in full prose and
-    explain why and how the change was made. If the commit makes
-    performance improvements, you should generally include some rough
-    benchmarks showing that it actually improves the performance.
+The summary is followed by a blank line, and then the body of the
+commit message.
+-   The body is written in prose, with full paragraphs.
+-   The body explains:
+    -   why and how the change was made
+    -   any manual testing you did in addition to running the automated tests
+    -   any aspects of the commit that you think are questionable and
+        you'd like special attention applied to.
+-   If the commit makes performance improvements, you should generally
+    include some rough benchmarks showing that it actually improves the
+    performance.
 -   When you fix a GitHub issue, [mark that you've fixed the issue in
     your commit
     message](https://help.github.com/articles/closing-issues-via-commit-messages/)
@@ -132,8 +134,4 @@ gather_subscriptions: Fixed exception when given bad input.
     the commit message read e.g. "Fixes: \#123."
 -   Any paragraph content in the commit message should be line-wrapped
     to less than 76 characters per line, so that your commit message
-    will be reasonably readable in git log in a normal terminal.
--   In your commit message, you should describe any manual testing you
-    did in addition to running the automated tests, and any aspects of
-    the commit that you think are questionable and you'd like special
-    attention applied to.
+    will be reasonably readable in `git log` in a normal terminal.

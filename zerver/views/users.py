@@ -22,11 +22,13 @@ from zerver.lib.avatar import avatar_url, get_avatar_url
 from zerver.lib.response import json_error, json_success
 from zerver.lib.streams import access_stream_by_name
 from zerver.lib.upload import upload_avatar_image
-from zerver.lib.validator import check_bool, check_string
-from zerver.lib.users import check_change_full_name, check_full_name
+from zerver.lib.validator import check_bool, check_string, check_int, check_url
+from zerver.lib.users import check_valid_bot_type, check_change_full_name, \
+    check_full_name, check_short_name
 from zerver.lib.utils import generate_random_token
 from zerver.models import UserProfile, Stream, Realm, Message, get_user_profile_by_email, \
-    email_allowed_for_realm, get_user_profile_by_id, get_user
+    email_allowed_for_realm, get_user_profile_by_id, get_user, Service
+from zerver.lib.create_user import random_api_key
 
 
 def deactivate_user_backend(request, user_profile, email):
@@ -107,7 +109,7 @@ def update_user_backend(request, user_profile, email,
             full_name.strip() != ""):
         # We don't respect `name_changes_disabled` here because the request
         # is on behalf of the administrator.
-        check_change_full_name(target, full_name)
+        check_change_full_name(target, full_name, user_profile)
 
     return json_success()
 
@@ -166,7 +168,7 @@ def patch_bot_backend(request, user_profile, email,
         return json_error(_('Insufficient permission'))
 
     if full_name is not None:
-        check_change_full_name(bot, full_name)
+        check_change_full_name(bot, full_name, user_profile)
     if bot_owner is not None:
         owner = get_user_profile_by_email(bot_owner)
         do_change_bot_owner(bot, owner, user_profile)
@@ -229,12 +231,24 @@ def regenerate_bot_api_key(request, user_profile, email):
     )
     return json_success(json_result)
 
+def add_outgoing_webhook_service(name, user_profile, base_url, interface, token):
+    # type: (Text, UserProfile, Text, int, Text) -> None
+    Service.objects.create(name=name,
+                           user_profile=user_profile,
+                           base_url=base_url,
+                           interface=interface,
+                           token=token)
+
 @has_request_variables
-def add_bot_backend(request, user_profile, full_name_raw=REQ("full_name"), short_name=REQ(),
+def add_bot_backend(request, user_profile, full_name_raw=REQ("full_name"), short_name_raw=REQ("short_name"),
+                    bot_type=REQ(validator=check_int, default=UserProfile.DEFAULT_BOT),
+                    payload_url=REQ(validator=check_url, default=None),
                     default_sending_stream_name=REQ('default_sending_stream', default=None),
                     default_events_register_stream_name=REQ('default_events_register_stream', default=None),
                     default_all_public_streams=REQ(validator=check_bool, default=None)):
-    # type: (HttpRequest, UserProfile, Text, Text, Optional[Text], Optional[Text], Optional[bool]) -> HttpResponse
+    # type: (HttpRequest, UserProfile, Text, Text, int, Optional[Text], Optional[Text], Optional[Text], Optional[bool]) -> HttpResponse
+    short_name = check_short_name(short_name_raw)
+    service_name = short_name
     short_name += "-bot"
     full_name = check_full_name(full_name_raw)
     email = '%s@%s' % (short_name, user_profile.realm.get_bot_domain())
@@ -242,12 +256,12 @@ def add_bot_backend(request, user_profile, full_name_raw=REQ("full_name"), short
     if not form.is_valid():
         # We validate client-side as well
         return json_error(_('Bad name or username'))
-
     try:
         get_user(email, user_profile.realm)
         return json_error(_("Username already in use"))
     except UserProfile.DoesNotExist:
         pass
+    check_valid_bot_type(bot_type)
 
     if len(request.FILES) == 0:
         avatar_source = UserProfile.AVATAR_FROM_GRAVATAR
@@ -269,7 +283,7 @@ def add_bot_backend(request, user_profile, full_name_raw=REQ("full_name"), short
     bot_profile = do_create_user(email=email, password='',
                                  realm=user_profile.realm, full_name=full_name,
                                  short_name=short_name, active=True,
-                                 bot_type=UserProfile.DEFAULT_BOT,
+                                 bot_type=bot_type,
                                  bot_owner=user_profile,
                                  avatar_source=avatar_source,
                                  default_sending_stream=default_sending_stream,
@@ -278,6 +292,14 @@ def add_bot_backend(request, user_profile, full_name_raw=REQ("full_name"), short
     if len(request.FILES) == 1:
         user_file = list(request.FILES.values())[0]
         upload_avatar_image(user_file, user_profile, bot_profile)
+
+    if bot_type == UserProfile.OUTGOING_WEBHOOK_BOT:
+        add_outgoing_webhook_service(name=service_name,
+                                     user_profile=bot_profile,
+                                     base_url=payload_url,
+                                     interface=1,
+                                     token=random_api_key())
+
     json_result = dict(
         api_key=bot_profile.api_key,
         avatar_url=avatar_url(bot_profile),
@@ -321,6 +343,7 @@ def get_members_backend(request, user_profile):
                   "is_bot": profile.is_bot,
                   "is_active": profile.is_active,
                   "is_admin": (profile in admins),
+                  "bot_type": profile.bot_type,
                   "email": profile.email,
                   "user_id": profile.id,
                   "avatar_url": avatar_url(profile)}

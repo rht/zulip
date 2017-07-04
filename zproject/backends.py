@@ -109,7 +109,7 @@ class ZulipAuthMixin(object):
             return None
 
 class SocialAuthMixin(ZulipAuthMixin):
-    auth_backend_name = None # type: Text
+    auth_backend_name = None  # type: Text
 
     def get_email_address(self, *args, **kwargs):
         # type: (*Any, **Any) -> Text
@@ -355,7 +355,7 @@ class ZulipRemoteUserBackend(RemoteUserBackend):
     create_unknown_user = False
 
     def authenticate(self, remote_user, realm_subdomain=None):
-        # type: (str, Optional[Text]) -> Optional[UserProfile]
+        # type: (Optional[str], Optional[Text]) -> Optional[UserProfile]
         if not remote_user:
             return None
 
@@ -375,23 +375,23 @@ class ZulipLDAPException(Exception):
 class ZulipLDAPAuthBackendBase(ZulipAuthMixin, LDAPBackend):
     # Don't use Django LDAP's permissions functions
     def has_perm(self, user, perm, obj=None):
-        # type: (UserProfile, Any, Any) -> bool
+        # type: (Optional[UserProfile], Any, Any) -> bool
         # Using Any type is safe because we are not doing anything with
         # the arguments.
         return False
 
     def has_module_perms(self, user, app_label):
-        # type: (UserProfile, str) -> bool
+        # type: (Optional[UserProfile], Optional[str]) -> bool
         return False
 
     def get_all_permissions(self, user, obj=None):
-        # type: (UserProfile, Any) -> Set
+        # type: (Optional[UserProfile], Any) -> Set
         # Using Any type is safe because we are not doing anything with
         # the arguments.
         return set()
 
     def get_group_permissions(self, user, obj=None):
-        # type: (UserProfile, Any) -> Set
+        # type: (Optional[UserProfile], Any) -> Set
         # Using Any type is safe because we are not doing anything with
         # the arguments.
         return set()
@@ -440,6 +440,8 @@ class ZulipLDAPAuthBackend(ZulipLDAPAuthBackendBase):
                 raise ZulipLDAPException("LDAP Authentication is not enabled")
             return user_profile, False
         except UserProfile.DoesNotExist:
+            if self._realm is None:
+                raise ZulipLDAPException("Realm is None")
             # No need to check for an inactive user since they don't exist yet
             if self._realm.deactivated:
                 raise ZulipLDAPException("Realm has been deactivated")
@@ -556,4 +558,4 @@ AUTH_BACKEND_NAME_MAP = {
     u'Google': GoogleMobileOauth2Backend,
     u'LDAP': ZulipLDAPAuthBackend,
     u'RemoteUser': ZulipRemoteUserBackend,
-} # type: Dict[Text, Any]
+}  # type: Dict[Text, Any]

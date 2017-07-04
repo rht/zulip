@@ -88,7 +88,9 @@ function _setup_page() {
         full_name: people.my_full_name(),
         page_params: page_params,
         zuliprc: 'zuliprc',
+        flaskbotrc: 'flaskbotrc',
         timezones: moment.tz.names(),
+        server_uri: page_params.server_uri,
     });
 
     $(".settings-box").html(settings_tab);
@@ -113,7 +115,7 @@ exports.launch_page = function (tab) {
         $(".sidebar .ind-tab[data-tab-key='settings']").click();
     }
 
-    modals.open_settings();
+    overlays.open_settings();
 
     $active_tab.click();
 };

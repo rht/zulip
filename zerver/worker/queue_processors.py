@@ -2,12 +2,17 @@
 from __future__ import absolute_import
 from typing import Any, Callable, Dict, List, Mapping, Optional, cast
 
+import sys
+import os
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../api')))
+
+from bots_api.bot_lib import ExternalBotHandler, StateHandler
 from django.conf import settings
 from django.core.handlers.wsgi import WSGIRequest
 from django.core.handlers.base import BaseHandler
 from zerver.models import \
-    get_user_profile_by_id, get_prereg_user_by_email, get_client, \
-    UserMessage, Message, Realm, get_system_bot
+    get_client, get_prereg_user_by_email, get_system_bot, \
+    get_user_profile_by_id, Message, Realm, Service, UserMessage, UserProfile
 from zerver.lib.context_managers import lockfile
 from zerver.lib.error_notify import do_report_error
 from zerver.lib.feedback import handle_feedback
@@ -33,6 +38,9 @@ from zerver.lib.str_utils import force_str
 from zerver.context_processors import common_context
 from zerver.lib.outgoing_webhook import do_rest_call
 from zerver.models import get_bot_services
+from zulip import Client
+from zerver.lib.bot_lib import EmbeddedBotHandler
+from zerver.outgoing_webhooks import get_outgoing_webhook_service_handler
 
 import os
 import sys
@@ -47,6 +55,8 @@ import requests
 import simplejson
 from six.moves import cStringIO as StringIO
 import re
+import importlib
+
 
 class WorkerDeclarationException(Exception):
     pass
@@ -166,8 +176,6 @@ class ConfirmationEmailWorker(QueueProcessingWorker):
             'referrer_name': referrer.full_name,
             'referrer_email': referrer.email,
             'referrer_realm_name': referrer.realm.name,
-            'verbose_support_offers': settings.VERBOSE_SUPPORT_OFFERS,
-            'support_email': settings.ZULIP_ADMINISTRATOR
         })
         send_future_email(
             "zerver/emails/invitation_reminder",
@@ -431,16 +439,46 @@ class OutgoingWebhookWorker(QueueProcessingWorker):
     def consume(self, event):
         # type: (Mapping[str, Any]) -> None
         message = event['message']
-        services = get_bot_services(event['user_profile_id'])
-        rest_operation = {'method': 'POST',
-                          'relative_url_path': '',
-                          'request_kwargs': {},
-                          'base_url': ''}
-
         dup_event = cast(Dict[str, Any], event)
         dup_event['command'] = message['content']
 
+        services = get_bot_services(event['user_profile_id'])
         for service in services:
-            rest_operation['base_url'] = str(service.base_url)
             dup_event['service_name'] = str(service.name)
-            do_rest_call(rest_operation, dup_event)
+            dup_event['base_url'] = str(service.base_url)
+            service_handler = get_outgoing_webhook_service_handler(service)
+            rest_operation, request_data = service_handler.process_event(dup_event)
+            do_rest_call(rest_operation, request_data, dup_event, service_handler)
+
+@assign_queue('embedded_bots')
+class EmbeddedBotWorker(QueueProcessingWorker):
+
+    def get_bot_api_client(self, user_profile):
+        # type: (UserProfile) -> EmbeddedBotHandler
+        return EmbeddedBotHandler(user_profile)
+
+    def get_bot_handler(self, service):
+        # type: (Service) -> Any
+        bot_module_name = 'bots_api.bots.%s.%s' % (service.name, service.name)
+        bot_module = importlib.import_module(bot_module_name) # type: Any
+        return bot_module.handler_class()
+
+    # TODO: Handle stateful bots properly
+    def get_state_handler(self):
+        # type: () -> StateHandler
+        return StateHandler()
+
+    def consume(self, event):
+        # type: (Mapping[str, Any]) -> None
+        user_profile_id = event['user_profile_id']
+        user_profile = get_user_profile_by_id(user_profile_id)
+
+        message = cast(Dict[str, Any], event['message'])
+
+        # TODO: Do we actually want to allow multiple Services per bot user?
+        services = get_bot_services(user_profile_id)
+        for service in services:
+            self.get_bot_handler(service).handle_message(
+                message=message,
+                client=self.get_bot_api_client(user_profile),
+                state_handler=self.get_state_handler())

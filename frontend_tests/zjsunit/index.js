@@ -40,8 +40,10 @@ global.write_test_output = output.write_test_output;
 global.append_test_output = output.append_test_output;
 
 // Set up fake jQuery
-var zjquery = require('./zjquery.js');
-global.zjquery = zjquery.zjquery;
+global.make_zjquery = require('./zjquery.js').make_zjquery;
+
+// Set up fake translation
+global.stub_i18n = require('./i18n.js');
 
 var noop = function () {};
 

@@ -41,6 +41,19 @@ function load_medium_avatar(user_email) {
     });
 }
 
+function user_last_seen_time_status(user_id) {
+    var status = presence.get_status(user_id);
+    if (status === "active") {
+        return i18n.t("Active now");
+    }
+    if (status === "unknown") {
+        // We are not using this anywhere right now as the user presence indicator
+        // is hidden for this case
+        return i18n.t("Unknown");
+    }
+    return timerender.last_seen_status_from_date(presence.last_active_date(user_id).clone());
+}
+
 function show_message_info_popover(element, id) {
     var last_popover_elem = current_message_info_popover_elem;
     popovers.hide_all();
@@ -72,6 +85,8 @@ function show_message_info_popover(element, id) {
             user_email: sender_email,
             user_id: message.sender_id,
             user_time: people.get_user_time(message.sender_id),
+            presence_status: presence.get_status(message.sender_id),
+            user_last_seen_time_status: user_last_seen_time_status(message.sender_id),
             pm_with_uri: narrow.pm_with_uri(sender_email),
             sent_by_uri: narrow.by_sender_uri(sender_email),
             narrowed: narrow_state.active(),
@@ -110,7 +125,6 @@ function show_message_info_popover(element, id) {
 exports.toggle_actions_popover = function (element, id) {
     var last_popover_elem = current_actions_popover_elem;
     popovers.hide_all();
-    $(element).closest('.message_row').toggleClass('has_popover has_actions_popover');
     if (last_popover_elem !== undefined
         && last_popover_elem.get()[0] === element) {
         // We want it to be the case that a user can dismiss a popover
@@ -118,6 +132,7 @@ exports.toggle_actions_popover = function (element, id) {
         return;
     }
 
+    $(element).closest('.message_row').toggleClass('has_popover has_actions_popover');
     current_msg_list.select_id(id);
     var elt = $(element);
     if (elt.data('popover') === undefined) {
@@ -147,7 +162,7 @@ exports.toggle_actions_popover = function (element, id) {
         var should_display_edit_history_option = _.any(message.edit_history, function (entry) {
             return entry.prev_content !== undefined;
         });
-
+        var should_display_delete_option = page_params.is_admin;
         var args = {
             message: message,
             use_edit_icon: use_edit_icon,
@@ -158,6 +173,7 @@ exports.toggle_actions_popover = function (element, id) {
             should_display_edit_history_option: should_display_edit_history_option,
             conversation_time_uri: narrow.by_conversation_and_time_uri(message, true),
             narrowed: narrow_state.active(),
+            should_display_delete_option: should_display_delete_option,
         };
 
         var ypos = elt.offset().top;
@@ -235,6 +251,7 @@ exports.actions_popped = function () {
 
 exports.hide_actions_popover = function () {
     if (popovers.actions_popped()) {
+        $('.has_popover').removeClass('has_popover has_actions_popover');
         current_actions_popover_elem.popover("destroy");
         current_actions_popover_elem = undefined;
     }
@@ -288,6 +305,20 @@ exports.hide_user_sidebar_popover = function () {
         current_user_sidebar_user_id = undefined;
         current_user_sidebar_popover = undefined;
     }
+};
+
+exports.show_sender_info = function () {
+    var message = $(".selected_message");
+    var sender = message.find(".sender_info_hover");
+    var prev_message = message.prev();
+    while (!sender[0]) {
+        prev_message = prev_message.prev();
+        if (!prev_message) {
+            break;
+        }
+        sender = prev_message.find(".sender_info_hover");
+    }
+    show_message_info_popover(sender[0], rows.id(message));
 };
 
 exports.register_click_handlers = function () {
@@ -398,6 +429,8 @@ exports.register_click_handlers = function () {
             user_full_name: name,
             user_id: user_id,
             user_time: people.get_user_time(user_id),
+            presence_status: presence.get_status(user_id),
+            user_last_seen_time_status: user_last_seen_time_status(user_id),
             pm_with_uri: narrow.pm_with_uri(user_email),
             sent_by_uri: narrow.by_sender_uri(user_email),
             private_message_class: "compose_private_message",
@@ -505,6 +538,14 @@ exports.register_click_handlers = function () {
         e.preventDefault();
     });
 
+    $('body').on('click', '.delete_message', function (e) {
+        var msgid = $(e.currentTarget).data('message-id');
+        popovers.hide_actions_popover();
+        message_edit.delete_message(msgid);
+        e.stopPropagation();
+        e.preventDefault();
+    });
+
     function initClipboard(selector) {
         return new Clipboard(selector);
     }
@@ -516,6 +557,12 @@ exports.register_click_handlers = function () {
         var row = $("[zid='" + id + "']");
         row.find(".alert-copied").css("display", "block");
         row.find(".alert-copied").delay(1000).fadeOut(300);
+
+        setTimeout(function () {
+            // The Cliboard library works by focusing to a hidden textarea.
+            // We unfocus this so keyboard shortcuts, etc., will work again.
+            $(":focus").blur();
+        }, 0);
 
         e.stopPropagation();
         e.preventDefault();

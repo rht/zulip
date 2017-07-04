@@ -1,5 +1,5 @@
 <div id="organization-settings" class="settings-section" data-name="auth-methods">
-    <form class="form-horizontal admin-realm-form">
+    <form class="form-horizontal admin-realm-form org-authentications-form">
         <div class="alert" id="admin-realm-authentication-methods-status"></div>
         <div class="admin-table-wrapper">
             <p>{{#tr this}}Configure the authentication methods for your organization.{{/tr}}</p>
@@ -14,7 +14,7 @@
         {{#if is_admin}}
         <div class="input-group">
             <div class="organization-submission">
-                <button type="submit" class="button white rounded sea-green">
+                <button type="submit" class="button rounded sea-green">
                     {{t 'Save changes'}}
                 </button>
             </div>

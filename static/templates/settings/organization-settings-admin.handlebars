@@ -1,9 +1,10 @@
 <div id="organization-settings" data-name="organization-settings" class="settings-section">
-    <form class="form-horizontal admin-realm-form">
+    <form class="form-horizontal admin-realm-form org-settings-form">
         <h3 class="light">{{t "Organization settings" }}</h3>
 
         <div class="alert" id="admin-realm-name-status"></div>
         <div class="alert" id="admin-realm-description-status"></div>
+        <div class="alert" id="admin-realm-notifications-stream-status"></div>
         <div class="alert" id="admin-realm-default-language-status"></div>
         <div class="alert" id="admin-realm-waiting-period-threshold-status"></div>
 
@@ -35,10 +36,31 @@
             </div>
             {{#if is_admin }}
             <div class="input-group organization-submission">
-                <button type="submit" class="button white rounded sea-green">
+                <button type="submit" class="button rounded sea-green">
                     {{t 'Save changes' }}
                 </button>
             </div>
+            {{/if}}
+        </div>
+
+        <div class="input-group">
+            <label for="realm_notifications_stream" id="realm_notifications_stream_label" class="inline-block"
+                title="{{t 'The stream to which new stream notifications go to.' }}">
+                {{t "Notifications stream:" }}
+                <span id="realm_notifications_stream_name"></span>
+            </label>
+            {{#if is_admin }}
+            <span class="dropup actual-dropdown-menu" id="id_realm_notifications_stream"
+                name="realm_notifications_stream" aria-labelledby="realm_notifications_stream_label">
+                <a class="dropdown-toggle" data-toggle="dropdown">{{t "[Change]" }}</a>
+                <ul class="dropdown-menu" role="menu">
+                    <li class="dropdown-search" role="presentation">
+                        <input type="text" role="menuitem" placeholder="{{t 'Filter streams' }}" autofocus/>
+                    </li>
+                    <span class="dropdown-list-body"></span>
+                </ul>
+            </span>
+            <a class="notifications-stream-disable">{{t "[Disable]" }}</a>
             {{/if}}
         </div>
 
@@ -53,9 +75,9 @@
                 <div id="upload_icon_spinner"></div>
             </div>
             <div class="inline-block avatar-controls">
-                <button class="button white rounded sea-green w-200 block input-size"
+                <button class="button rounded sea-green w-200 block input-size"
                         id="realm_icon_upload_button">{{t 'Upload new icon' }}</button>
-                <button class="button white rounded btn-danger w-200 m-t-10 block input-size"
+                <button class="button rounded btn-danger w-200 m-t-10 block input-size"
                         id="realm_icon_delete_button">{{t 'Delete icon' }}</button>
             </div>
         </div>

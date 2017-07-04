@@ -6,7 +6,7 @@
 -r twisted.txt
 
 # Needed to compute test coverage
-coverage==4.3.4
+coverage==4.4.1
 
 # fake for LDAP testing
 git+https://github.com/umairwaheed/fakeldap.git@37bc199e9589c31f4bb5bae1445ad1cd7f84e1ac#egg=fakeldap==0.5.1.0zulip1
@@ -25,13 +25,13 @@ gitlint==0.8.2
 
 # Needed for gitlint
 arrow==0.10.0
-sh==1.11
+sh==1.12.14
 
 # Needed to sync translations from transifex
 transifex-client==0.12.4
 
 # Dependency of transifex-client
-urllib3==1.20
+urllib3==1.21.1
 
 # Install the Zulip API bindings into the virtualenv; note that this
 # won't be automatically updated for new versions of api/.  This is

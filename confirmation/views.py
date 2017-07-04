@@ -33,8 +33,6 @@ def confirm(request, confirmation_key):
         'days': getattr(settings, 'EMAIL_CONFIRMATION_DAYS', 10),
         'key': confirmation_key,
         'full_name': request.GET.get("full_name", None),
-        'support_email': settings.ZULIP_ADMINISTRATOR,
-        'verbose_support_offers': settings.VERBOSE_SUPPORT_OFFERS,
     }
     templates = [
         'confirmation/confirm.html',

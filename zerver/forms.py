@@ -14,6 +14,7 @@ from jinja2 import Markup as mark_safe
 from zerver.lib.actions import do_change_password, is_inactive, user_email_is_unique
 from zerver.lib.name_restrictions import is_reserved_subdomain, is_disposable_domain
 from zerver.lib.request import JsonableError
+from zerver.lib.send_email import send_email
 from zerver.lib.users import check_full_name
 from zerver.lib.utils import get_subdomain, check_subdomain
 from zerver.models import Realm, get_user_profile_by_email, UserProfile, \
@@ -51,19 +52,30 @@ def email_is_not_mit_mailing_list(email):
 
 class RegistrationForm(forms.Form):
     MAX_PASSWORD_LENGTH = 100
-    full_name = forms.CharField(max_length=100)
+    full_name = forms.CharField(max_length=UserProfile.MAX_NAME_LENGTH)
     # The required-ness of the password field gets overridden if it isn't
     # actually required for a realm
     password = forms.CharField(widget=forms.PasswordInput, max_length=MAX_PASSWORD_LENGTH,
                                required=False)
-    realm_name = forms.CharField(max_length=Realm.MAX_REALM_NAME_LENGTH, required=False)
     realm_subdomain = forms.CharField(max_length=Realm.MAX_REALM_SUBDOMAIN_LENGTH, required=False)
     realm_org_type = forms.ChoiceField(((Realm.COMMUNITY, 'Community'),
                                         (Realm.CORPORATE, 'Corporate')),
-                                       initial=Realm.COMMUNITY, required=False)
+                                       initial=Realm.CORPORATE, required=False)
 
-    if settings.TERMS_OF_SERVICE:
-        terms = forms.BooleanField(required=True)
+    def __init__(self, *args, **kwargs):
+        # type: (*Any, **Any) -> None
+
+        # Since the superclass doesn't except random extra kwargs, we
+        # remove it from the kwargs dict before initializing.
+        realm_creation = kwargs['realm_creation']
+        del kwargs['realm_creation']
+
+        super(RegistrationForm, self).__init__(*args, **kwargs)
+        if settings.TERMS_OF_SERVICE:
+            self.fields['terms'] = forms.BooleanField(required=True)
+        self.fields['realm_name'] = forms.CharField(
+            max_length=Realm.MAX_REALM_NAME_LENGTH,
+            required=realm_creation)
 
     def clean_full_name(self):
         # type: () -> Text
@@ -190,13 +202,16 @@ class ZulipPasswordResetForm(PasswordResetForm):
         # type: (str, str, Dict[str, Any], str, str, str) -> None
         """
         Currently we don't support accounts in multiple subdomains using
-        a single email addresss. We override this function so that we do
+        a single email address. We override this function so that we do
         not send a reset link to an email address if the reset attempt is
         done on the subdomain which does not match user.realm.subdomain.
 
         Once we start supporting accounts with the same email in
-        multiple subdomains, we may be able to delete or refactor this
-        function.
+        multiple subdomains, we may be able to refactor this function.
+
+        A second reason we override this function is so that we can send
+        the mail through the functions in zerver.lib.send_email, to match
+        how we send all other mail in the codebase.
         """
         user_realm = get_user_profile_by_email(to_email).realm
         attempted_subdomain = get_subdomain(getattr(self, 'request'))
@@ -204,14 +219,8 @@ class ZulipPasswordResetForm(PasswordResetForm):
         if not check_subdomain(user_realm.subdomain, attempted_subdomain):
             context['attempted_realm'] = get_realm(attempted_subdomain)
 
-        super(ZulipPasswordResetForm, self).send_mail(
-            subject_template_name,
-            email_template_name,
-            context,
-            from_email,
-            to_email,
-            html_email_template_name=html_email_template_name
-        )
+        send_email('zerver/emails/password_reset', to_email, from_email=from_email,
+                   context=context)
 
     def save(self, *args, **kwargs):
         # type: (*Any, **Any) -> None
@@ -246,6 +255,12 @@ class OurAuthenticationForm(AuthenticationForm):
 Please contact %s to reactivate this group.""" % (
                 user_profile.realm.name,
                 settings.ZULIP_ADMINISTRATOR)
+            raise ValidationError(mark_safe(error_msg))
+
+        if not user_profile.is_active:
+            error_msg = (u"Sorry for the trouble, but your account has been "
+                         u"deactivated. Please contact %s to reactivate "
+                         u"it.") % (settings.ZULIP_ADMINISTRATOR,)
             raise ValidationError(mark_safe(error_msg))
 
         if not check_subdomain(get_subdomain(self.request), user_profile.realm.subdomain):

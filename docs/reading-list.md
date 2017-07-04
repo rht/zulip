@@ -126,11 +126,19 @@ Some titles have been shortened for organizational purposes.
 
 [Android Development for Beginners]: https://www.udacity.com/course/android-development-for-beginners--ud837
 
+*Blog* - [Java Tutorials for Beginners][]
+
+[Java Tutorials for Beginners]: http://www.geeksforgeeks.org/java/
+
 ## JavaScript/ECMAScript
 
 *Tutorial* - [clean-code-javascript Software engineering principles][]
 
 [clean-code-javascript Software engineering principles]: https://github.com/ryanmcdermott/clean-code-javascript
+
+*Course* - [React native and redux course][]  (*Not free!*)
+
+[React native and redux course]: https://www.udemy.com/the-complete-react-native-and-redux-course/
 
 *Slides* - [TypeScript vs. CoffeeScript vs. ES6][]
 
@@ -144,7 +152,7 @@ You may want to take a look first at our [Git and GitHub guide][].
 
 *Article* - [Git tips][]
 
-[Git tips]: http://blog.sidhant.me/post/155311539806/stuff-that-i-learnt-in-git-while-working-with
+[Git tips]: http://blog.sidhant.me/os/python/git/projects/2017/01/07/Zulip-and-git.html
 
 ## Computer Science/Algorithms
 

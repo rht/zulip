@@ -44,10 +44,6 @@ function get_last_recipient_in_pm(query_string) {
     return recipients[recipients.length-1];
 }
 
-function composebox_typeahead_highlighter(item) {
-    return typeahead_helper.highlight_with_escaping(this.query, item);
-}
-
 function query_matches_language(query, lang) {
     query = query.toLowerCase();
     return lang.indexOf(query) !== -1;
@@ -178,23 +174,6 @@ function select_on_focus(field_id) {
     });
 }
 
-function autocomplete_checks(q, char) {
-    // Don't autocomplete more than this many characters.
-    var max_chars = 30;
-    var last_at = q.lastIndexOf(char);
-    if (last_at === -1 || last_at < q.length - 1 - max_chars) {
-        return false;  // char doesn't appear, or too far back
-    }
-
-    // Only match if the char follows a space, various punctuation,
-    // or is at the beginning of the string.
-    if (last_at > 0 && "\n\t \"'(){}[]".indexOf(q[last_at - 1]) === -1) {
-        return false;
-    }
-
-    return true;
-}
-
 exports.split_at_cursor = function (query, input) {
     var cursor = input.caret();
     return [query.slice(0, cursor), query.slice(cursor)];
@@ -287,17 +266,13 @@ exports.compose_content_begins_typeahead = function (query) {
     }
 
     if (this.options.completions.mention && current_token[0] === '@') {
-        if (!autocomplete_checks(q, '@')) {
-            return false;
-        }
-
-        current_token = q.substring(q.lastIndexOf('@') + 1);
+        current_token = current_token.substring(1);
         if (current_token.length < 1 || current_token.lastIndexOf('*') !== -1) {
             return false;
         }
 
         this.completing = 'mention';
-        this.token = current_token.substring(current_token.indexOf("@") + 1);
+        this.token = current_token;
         var all_item = {
             special_item_text: "all (Notify everyone)",
             email: "all",
@@ -317,14 +292,11 @@ exports.compose_content_begins_typeahead = function (query) {
     }
 
     if (this.options.completions.stream && current_token[0] === '#') {
-        if (!autocomplete_checks(q, '#')) {
+        if (current_token.length === 1) {
             return false;
         }
 
-        current_token = q.substring(q.lastIndexOf('#') + 1);
-        if (current_token.length < 1) {
-            return false;
-        }
+        current_token = current_token.substring(1);
 
         // Don't autocomplete if there is a space following a '#'
         if (current_token[0] === " ") {
@@ -332,7 +304,7 @@ exports.compose_content_begins_typeahead = function (query) {
         }
 
         this.completing = 'stream';
-        this.token = current_token.substring(current_token.indexOf("#")+1);
+        this.token = current_token;
         return stream_data.subscribed_subs();
     }
     return false;
@@ -340,14 +312,16 @@ exports.compose_content_begins_typeahead = function (query) {
 
 exports.content_highlighter = function (item) {
     if (this.completing === 'emoji') {
-        return "<img class='emoji' src='" + item.emoji_url + "' /> " + item.emoji_name;
+        return typeahead_helper.render_typeahead_item({
+            primary: item.emoji_name,
+            img_src: item.emoji_url,
+        });
     } else if (this.completing === 'mention') {
-        var item_formatted = typeahead_helper.render_person(item);
-        return typeahead_helper.highlight_with_escaping(this.token, item_formatted);
+        return typeahead_helper.render_person(item);
     } else if (this.completing === 'stream') {
-        return typeahead_helper.render_stream(this.token, item);
+        return typeahead_helper.render_stream(item);
     } else if (this.completing === 'syntax') {
-        return typeahead_helper.highlight_with_escaping(this.token, item);
+        return typeahead_helper.render_typeahead_item({ primary: item });
     }
 };
 
@@ -355,10 +329,13 @@ exports.content_typeahead_selected = function (item) {
     var pieces = exports.split_at_cursor(this.query, this.$element);
     var beginning = pieces[0];
     var rest = pieces[1];
+    var textbox = this.$element;
 
     if (this.completing === 'emoji') {
         // leading and trailing spaces are required for emoji, except if it begins a message.
-        if (beginning.lastIndexOf(":") === 0 || beginning.charAt(beginning.lastIndexOf(":") - 1) === " ") {
+        if (beginning.lastIndexOf(":") === 0 ||
+            beginning.charAt(beginning.lastIndexOf(":") - 1) === " " ||
+            beginning.charAt(beginning.lastIndexOf(":") - 1) === "\n") {
             beginning = beginning.replace(/:\S+$/, "") + ":" + item.emoji_name + ": ";
         } else {
             beginning = beginning.replace(/:\S+$/, "") + " :" + item.emoji_name + ": ";
@@ -372,15 +349,26 @@ exports.content_typeahead_selected = function (item) {
                 + '#**' + item.name + '** ');
         $(document).trigger('streamname_completed.zulip', {stream: item});
     } else if (this.completing === 'syntax') {
-        rest = "\n" + beginning.substring(beginning.length - this.token.length - 4,
-                beginning.length - this.token.length).trim() + rest;
-        beginning = beginning.substring(0, beginning.length - this.token.length) + item + "\n";
+        // Isolate the end index of the triple backticks/tildes, including
+        // possibly a space afterward
+        var backticks = beginning.length - this.token.length;
+        if (rest === '') {
+            // If cursor is at end of input ("rest" is empty), then
+            // complete the token before the cursor, and add a closing fence
+            // after the cursor
+            beginning = beginning.substring(0, backticks) + item + '\n';
+            rest = "\n" + beginning.substring(backticks - 4, backticks).trim() + rest;
+        } else {
+            // If more text after the input, then complete the token, but don't touch
+            // "rest" (i.e. do not add a closing fence)
+            beginning = beginning.substring(0, backticks) + item;
+        }
     }
 
     // Keep the cursor after the newly inserted text, as Bootstrap will call textbox.change() to
     // overwrite the text in the textbox.
     setTimeout(function () {
-        $('#new_message_content').caret(beginning.length, beginning.length);
+        textbox.caret(beginning.length, beginning.length);
         // Also, trigger autosize to check if compose box needs to be resized.
         compose_ui.autosize_textarea();
     }, 0);
@@ -467,8 +455,7 @@ exports.initialize = function () {
         items: 3,
         fixed: true,
         highlighter: function (item) {
-            var query = this.query;
-            return typeahead_helper.highlight_query_in_phrase(query, item);
+            return typeahead_helper.render_typeahead_item({ primary: item });
         },
         matcher: function (item) {
             // The matcher for "stream" is strictly prefix-based,
@@ -485,7 +472,9 @@ exports.initialize = function () {
         },
         items: 3,
         fixed: true,
-        highlighter: composebox_typeahead_highlighter,
+        highlighter: function (item) {
+            return typeahead_helper.render_typeahead_item({ primary: item });
+        },
         sorter: function (items) {
             var sorted = typeahead_helper.sorter(this.query, items, function (x) {return x;});
             if (sorted.length > 0 && sorted.indexOf(this.query) === -1) {
@@ -501,19 +490,12 @@ exports.initialize = function () {
         dropup: true,
         fixed: true,
         highlighter: function (item) {
-            var query = get_last_recipient_in_pm(this.query);
-            var item_formatted = typeahead_helper.render_person(item);
-            return typeahead_helper.highlight_with_escaping(query, item_formatted);
+            return typeahead_helper.render_person(item);
         },
         matcher: function (item) {
             var current_recipient = get_last_recipient_in_pm(this.query);
             // If you type just a comma, there won't be any recipients.
             if (!current_recipient) {
-                return false;
-            }
-            // If the name is only whitespace (does not contain any non-whitespace),
-            // we're between typing names; don't autocomplete anything for us.
-            if (! current_recipient.match(/\S/)) {
                 return false;
             }
             var recipients = util.extract_pm_recipients(this.query);

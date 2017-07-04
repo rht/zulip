@@ -69,8 +69,8 @@ exports.update_starred = function (message_id, starred) {
         } else {
             elt.removeClass("icon-vector-star").addClass("icon-vector-star-empty").addClass("empty-star");
         }
-        var title_state = message.starred ? "Unstar" : "Star";
-        elt.attr("title", title_state + " this message");
+        var title_state = starred ? i18n.t("Unstar") : i18n.t("Star");
+        elt.attr("title", i18n.t("__starred_status__ this message", {starred_status: title_state}));
     });
 };
 
@@ -95,6 +95,18 @@ exports.show_message_failed = function (message_id, failed_msg) {
         var failed_div = row.find('.message_failed');
         failed_div.toggleClass('notvisible', false);
         failed_div.find('.failed_text').attr('title', failed_msg);
+    });
+};
+
+exports.remove_message = function (message_id) {
+    _.each([message_list.all, home_msg_list, message_list.narrowed], function (list) {
+        if (list === undefined) {
+            return;
+        }
+        var row = list.get_row(message_id);
+        if (row !== undefined) {
+            list.remove_and_rerender([{id: message_id}]);
+        }
     });
 };
 
@@ -130,16 +142,28 @@ exports.show_info_overlay = function (target) {
     var overlay = $(".informational-overlays");
 
     if (!overlay.hasClass("show")) {
-        modals.open_overlay({
+        overlays.open_overlay({
             name:  'informationalOverlays',
             overlay: overlay,
-            on_close: function () {},
+            on_close: function () {
+                hashchange.changehash("");
+            },
         });
     }
 
     if (target) {
         components.toggle.lookup("info-overlay-toggle").goto(target);
     }
+};
+
+exports.maybe_show_keyboard_shortcuts = function () {
+    if (overlays.is_active()) {
+        return;
+    }
+    if (popovers.any_active()) {
+        return;
+    }
+    ui.show_info_overlay("keyboard-shortcuts");
 };
 
 var loading_more_messages_indicator_showing = false;

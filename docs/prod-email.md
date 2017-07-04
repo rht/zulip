@@ -9,7 +9,7 @@ if you already have an outgoing SMTP provider; just start reading from
 
 If you don't have an existing outgoing SMTP provider, don't worry!
 There are several SMTP providers with free tiers, such as
-[Mailgun](https://documentation.mailgun.com/quickstart-sending.html#send-via-smtp)
+[Mailgun](https://documentation.mailgun.com/en/latest/quickstart-sending.html#send-via-smtp)
 or
 [Amazon SES](http://docs.aws.amazon.com/ses/latest/DeveloperGuide/send-email-smtp.html)
 (free for sending email from EC2), and dozens of products have free
@@ -36,7 +36,7 @@ provider, you can add to `/etc/zulip/settings.py` the following:
 
 ```
 EMAIL_BACKEND = 'django.core.mail.backends.filebased.EmailBackend'
-EMAIL_FILE_PATH = '/var/log/zulip/emails
+EMAIL_FILE_PATH = '/var/log/zulip/emails'
 ```
 
 Outgoing emails that Zulip would have sent will just be written to
@@ -51,10 +51,10 @@ later setup a real SMTP provider!
 To configure outgoing SMTP, you will need to complete the following steps:
 
 1. Fill out the outgoing email sending configuration block in
-`/etc/zulip/settings.py`, including `EMAIL_HOST`, `EMAIL_HOST_USER`,
-`DEFAULT_FROM_EMAIL`, and `NOREPLY_EMAIL_ADDRESS`.  You may also need
-to set `EMAIL_PORT` if your provider doesn't use the standard
-SMTP submission port (587).
+`/etc/zulip/settings.py`, including `EMAIL_HOST`, `EMAIL_HOST_USER`, and
+`NOREPLY_EMAIL_ADDRESS`. You may also need to set `EMAIL_PORT` if your provider
+doesn't use the standard SMTP submission port (587). You may also want to update
+`NOREPLY_EMAIL_ADDRESS` from its default value.
 
 2. Put the SMTP password for `EMAIL_HOST_USER` in
 `/etc/zulip/zulip-secrets.conf` as `email_password = yourPassword`.

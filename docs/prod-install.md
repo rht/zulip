@@ -6,10 +6,10 @@ instead like to test or develop a new feature, we recommend the
 
 You will need an Ubuntu system that satisfies
 [the installation requirements](prod-requirements.html).  In short,
-you should have an Ubuntu 14.04 Trusty or Ubuntu 16.04 Xenial 64-bit
-server instance, with at least 4GB RAM, 2 CPUs, and 10 GB disk space.
-You should also have a domain name available and have updated its DNS
-record to point to your server.
+you need:
+* A Ubuntu 14.04 Trusty or Ubuntu 16.04 Xenial 64-bit server
+* At least 2GB RAM and 10 GB disk space (4GB and 2 CPUs recommended for 100+ users).
+* A DNS name, an SSL certificate, and credentials for sending email.
 
 ## Step 0: Subscribe
 
@@ -78,24 +78,20 @@ These settings include:
   maintaining this installation and who will get support and error
   emails.
 
-- `EMAIL_*`, `DEFAULT_FROM_EMAIL`, and `NOREPLY_EMAIL_ADDRESS`:
+- `EMAIL_*`:
   credentials for an outgoing SMTP server so Zulip can send emails
   when needed (don't forget to set `email_password` in the
   `zulip-secrets.conf` file!).  We highly recommend reading our
   [production email docs](prod-email.html) and following the test
   procedure discussed there to make sure you've setup outgoing email
   correctly, since outgoing email is the most common configuration
-  problem.
+  problem. You may also want to update `NOREPLY_EMAIL_ADDRESS`
 
-- `AUTHENTICATION_BACKENDS`: a list of enabled authentication
-  mechanisms.  You'll need to enable at least one authentication
-  mechanism by uncommenting its corresponding line, and then also do
-  any additional configuration required for that backend as documented
-  in the `settings.py` file (the email backend requires no extra
-  configuration).  See the
-  [section on Authentication](prod-authentication-methods.html) for
-  more detail on the available authentication backends and how to
-  configure them.
+- If desired, you can also configure additional
+  [authentication backends](prod-authentication-methods.html) while
+  you're editing /etc/zulip/settings.py.  Note, however, that the
+  default (email) backend must be enabled when you complete step 5
+  (creating an organization) below.
 
 ## Step 4: Initialize Zulip database
 
@@ -164,6 +160,7 @@ Corporate Organization:
 
 Next, you'll likely want to do one of the following:
 
+* [Read our advice for new organization administrators][realm-admin-docs]
 * [Customize your Zulip organization](prod-customize.html).
 * [Learn about managing a production Zulip server](prod-maintain-secure-upgrade.html).
 
@@ -177,3 +174,5 @@ to debug.  If that doesn't help, please visit
 in the [Zulip developerment community server](chat-zulip-org.html) for
 realtime help or email zulip-help@googlegroups.com with the full
 traceback and we'll try to help you out!
+
+[realm-admin-docs]: https://zulipchat.com/help/getting-your-organization-started-with-zulip

@@ -34,6 +34,7 @@ from zerver.lib.test_helpers import (
 
 from zerver.models import (
     get_stream,
+    get_user,
     get_user_profile_by_email,
     get_realm_by_email_domain,
     Client,
@@ -92,7 +93,7 @@ class UploadSerializeMixin(SerializeMixin):
 
 class ZulipTestCase(TestCase):
     # Ensure that the test system just shows us diffs
-    maxDiff = None  # type: int
+    maxDiff = None  # type: Optional[int]
 
     '''
     WRAPPER_COMMENT:
@@ -209,20 +210,38 @@ class ZulipTestCase(TestCase):
         return django_client.get(url, info, **kwargs)
 
     example_user_map = dict(
-        hamlet='hamlet@zulip.com',
-        cordelia='cordelia@zulip.com',
-        iago='iago@zulip.com',
-        prospero='prospero@zulip.com',
-        othello='othello@zulip.com',
-        AARON='AARON@zulip.com',
-        ZOE='ZOE@zulip.com',
+        hamlet=u'hamlet@zulip.com',
+        cordelia=u'cordelia@zulip.com',
+        iago=u'iago@zulip.com',
+        prospero=u'prospero@zulip.com',
+        othello=u'othello@zulip.com',
+        AARON=u'AARON@zulip.com',
+        aaron=u'aaron@zulip.com',
+        ZOE=u'ZOE@zulip.com',
     )
 
     mit_user_map = dict(
-        sipbtest="sipbtest@mit.edu",
-        starnine="starnine@mit.edu",
-        espuser="espuser@mit.edu",
+        sipbtest=u"sipbtest@mit.edu",
+        starnine=u"starnine@mit.edu",
+        espuser=u"espuser@mit.edu",
     )
+
+    # Non-registered test users
+    nonreg_user_map = dict(
+        test=u'test@zulip.com',
+        test1=u'test1@zulip.com',
+        alice=u'alice@zulip.com',
+        newuser=u'newuser@zulip.com',
+        bob=u'bob@zulip.com',
+        cordelia=u'cordelia@zulip.com',
+        newguy=u'newguy@zulip.com',
+        me=u'me@zulip.com',
+    )
+
+    def nonreg_user(self, name):
+        # type: (str) -> UserProfile
+        email = self.nonreg_user_map[name]
+        return get_user(email, get_realm_by_email_domain(email))
 
     def example_user(self, name):
         # type: (str) -> UserProfile
@@ -234,12 +253,16 @@ class ZulipTestCase(TestCase):
         email = self.mit_user_map[name]
         return get_user_profile_by_email(email)
 
+    def nonreg_email(self, name):
+        # type: (str) -> Text
+        return self.nonreg_user_map[name]
+
     def example_email(self, name):
-        # type: (str) -> str
+        # type: (str) -> Text
         return self.example_user_map[name]
 
     def mit_email(self, name):
-        # type: (str) -> str
+        # type: (str) -> Text
         return self.mit_user_map[name]
 
     def notification_bot(self):
@@ -272,7 +295,7 @@ class ZulipTestCase(TestCase):
         return self.submit_reg_form_for_user(email, password)
 
     def submit_reg_form_for_user(self, email, password, realm_name="Zulip Test",
-                                 realm_subdomain="zuliptest", realm_org_type=Realm.COMMUNITY,
+                                 realm_subdomain="zuliptest", realm_org_type=Realm.CORPORATE,
                                  from_confirmation='', full_name=None, timezone=u'', **kwargs):
         # type: (Text, Text, Optional[Text], Optional[Text], int, Optional[Text], Optional[Text], Optional[Text], **Any) -> HttpResponse
         """

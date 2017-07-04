@@ -132,6 +132,7 @@ def build_message_list(user_profile, messages):
         plain = fix_plaintext_image_urls(plain)
         plain = relative_to_full_url(plain)
 
+        assert message.rendered_content is not None
         html = message.rendered_content
         html = relative_to_full_url(html)
         html = fix_emoji_sizes(html)
@@ -403,7 +404,6 @@ def enqueue_welcome_emails(email, name):
     unsubscribe_link = one_click_unsubscribe_link(user_profile, "welcome")
     context = common_context(user_profile)
     context.update({
-        'verbose_support_offers': settings.VERBOSE_SUPPORT_OFFERS,
         'unsubscribe_link': unsubscribe_link
     })
     send_future_email(

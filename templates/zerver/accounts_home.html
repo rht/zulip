@@ -6,7 +6,7 @@
 {% block portico_content %}
 <script type="text/javascript">
 $(function () {
-    autofocus('#email');
+    common.autofocus('#email');
 });
 </script>
 <div class="bg-image"></div>
@@ -21,7 +21,7 @@ $(function () {
                 {% if realm_name %}
                 <div class="left-side">
                     <div class="org-header">
-                        <div class="avatar" style="background-image: url('{{ realm_icon }}')"></div>
+                        <img class="avatar" src="{{ realm_icon }}" alt="" />
                         <div class="info-box">
                             <div class="organization-name">{{ realm_name }}</div>
                             <div class="organization-path">{{ realm_uri }}</div>
@@ -34,15 +34,17 @@ $(function () {
                 {% endif %}
                 <div class="right-side">
                     {% if no_auth_enabled %}
-                    <div class="alert">
-                        <p>No authentication backends are enabled on this
-                        server yet, so it is impossible to register!</p>
+                        <div class="alert">
+                            <p>No authentication backends are enabled on this
+                            server yet, so it is impossible to register!</p>
 
-                        <p>See
-                        the <a href="http://zulip.readthedocs.io/en/latest/prod-install.html#step-3-configure-zulip">Zulip
-                        authentication documentation</a> to learn how to
-                        configure authentication backends.</p>
-                    </div>
+                            <p>
+                                See
+                                the <a href="http://zulip.readthedocs.io/en/latest/prod-install.html#step-3-configure-zulip">Zulip
+                                authentication documentation</a> to learn how to
+                                configure authentication backends.
+                            </p>
+                        </div>
                     {% else %}
                         {% if password_auth_enabled %}
                             <form class="form-inline" id="send_confirm" name="email_form"
@@ -51,9 +53,9 @@ $(function () {
 
                                 <div class="input-box no-validate">
                                     <input type="email" id="email" class="email" name="email" value="" required />
-                                    <label>Email</label>
+                                    <label for="email">Email</label>
                                     <div class="required"></div>
-                                    <img class="valid" src="/static/images/checkbox-valid.svg" />
+                                    <img class="valid" src="/static/images/checkbox-valid.svg" alt="{{ _('Valid') }}" />
                                 </div>
 
                                 <button class="full-width" type="submit" name="">{{ _('Sign up') }}</button>
@@ -82,7 +84,7 @@ $(function () {
                         {% if github_auth_enabled %}
                         <div class="login-github">
                             <a href="{{ url('signup-social', args=('github',)) }}"
-                               class="github-wrapper">
+                                class="github-wrapper">
                                 <button class="login-github-button github">
                                     <span>{{ _('Sign up with GitHub') }}</span>
                                 </button>

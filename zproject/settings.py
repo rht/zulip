@@ -11,6 +11,7 @@ from __future__ import absolute_import
 # See http://zulip.readthedocs.io/en/latest/settings.html for more information
 #
 ########################################################################
+from copy import deepcopy
 import os
 import platform
 import time
@@ -66,7 +67,8 @@ ZULIP_ORG_KEY = get_secret("zulip_org_key")
 ZULIP_ORG_ID = get_secret("zulip_org_id")
 
 if 'DEBUG' not in globals():
-    # Uncomment end of next line to test JS/CSS minification.
+    # Uncomment end of next line to test CSS minification.
+    # For webpack JS minification use tools/run_dev.py --minify
     DEBUG = DEVELOPMENT # and platform.node() != 'your-machine'
 
 if DEBUG:
@@ -234,8 +236,6 @@ REQUIRED_SETTINGS = [("EXTERNAL_HOST", "zulip.example.com"),
                      # case, it seems worth having in this list
                      ("SECRET_KEY", ""),
                      ("AUTHENTICATION_BACKENDS", ()),
-                     ("NOREPLY_EMAIL_ADDRESS", "Zulip <noreply@example.com>"),
-                     ("DEFAULT_FROM_EMAIL", "Zulip <zulip@example.com>"),
                      ]
 
 if ADMINS == "":
@@ -296,33 +296,55 @@ if PRODUCTION:
     # Template caching is a significant performance win in production.
     LOADERS = [('django.template.loaders.cached.Loader', LOADERS)]
 
-TEMPLATES = [
-    {
-        'NAME': 'Jinja2',
-        'BACKEND': 'zproject.jinja2.backends.Jinja2',
-        'DIRS': [
-            os.path.join(DEPLOY_ROOT, 'templates'),
-            os.path.join(DEPLOY_ROOT, 'zerver', 'webhooks'),
+base_template_engine_settings = {
+    'BACKEND': 'zproject.jinja2.backends.Jinja2',
+    'OPTIONS': {
+        'debug': DEBUG,
+        'environment': 'zproject.jinja2.environment',
+        'extensions': [
+            'jinja2.ext.i18n',
+            'jinja2.ext.autoescape',
+            'pipeline.jinja2.PipelineExtension',
+            'webpack_loader.contrib.jinja2ext.WebpackExtension',
         ],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'debug': DEBUG,
-            'environment': 'zproject.jinja2.environment',
-            'extensions': [
-                'jinja2.ext.i18n',
-                'jinja2.ext.autoescape',
-                'pipeline.jinja2.PipelineExtension',
-            ],
-            'context_processors': [
-                'zerver.context_processors.zulip_default_context',
-                'zerver.context_processors.add_metrics',
-                'django.template.context_processors.i18n',
-            ],
-        },
+        'context_processors': [
+            'zerver.context_processors.zulip_default_context',
+            'zerver.context_processors.add_metrics',
+            'django.template.context_processors.i18n',
+        ],
     },
+}
+
+default_template_engine_settings = deepcopy(base_template_engine_settings)
+default_template_engine_settings.update({
+    'NAME': 'Jinja2',
+    'DIRS': [
+        os.path.join(DEPLOY_ROOT, 'templates'),
+        os.path.join(DEPLOY_ROOT, 'zerver', 'webhooks'),
+    ],
+    'APP_DIRS': True,
+})
+
+non_html_template_engine_settings = deepcopy(base_template_engine_settings)
+non_html_template_engine_settings.update({
+    'NAME': 'Jinja2_plaintext',
+    'DIRS': [os.path.join(DEPLOY_ROOT, 'templates')],
+    'APP_DIRS': False,
+})
+non_html_template_engine_settings['OPTIONS'].update({
+    'autoescape': False,
+    'trim_blocks': True,
+    'lstrip_blocks': True,
+})
+
+# The order here is important; get_template and related/parent functions try
+# the template engines in order until one succeeds.
+TEMPLATES = [
+    default_template_engine_settings,
+    non_html_template_engine_settings,
 ]
 
-MIDDLEWARE_CLASSES = (
+MIDDLEWARE = (
     # With the exception of it's dependencies,
     # our logging middleware should be the top middleware item.
     'zerver.middleware.TagRequests',
@@ -358,8 +380,8 @@ INSTALLED_APPS = [
     'django.contrib.sites',
     'django.contrib.staticfiles',
     'confirmation',
-    'guardian',
     'pipeline',
+    'webpack_loader',
     'zerver',
     'social_django',
 ]
@@ -726,8 +748,8 @@ PIPELINE = {
                 'third/bootstrap-notify/css/bootstrap-notify.css',
                 'third/spectrum/spectrum.css',
                 'third/thirdparty-fonts.css',
-                'third/jquery-perfect-scrollbar/css/perfect-scrollbar.css',
                 'node_modules/katex/dist/katex.css',
+                'node_modules/perfect-scrollbar/dist/css/perfect-scrollbar.css',
                 'styles/components.css',
                 'styles/zulip.css',
                 'styles/alerts.css',
@@ -787,46 +809,6 @@ PIPELINE = {
 # Useful reading on how this works is in
 # https://zulip.readthedocs.io/en/latest/front-end-build-process.html
 JS_SPECS = {
-    'common': {
-        'source_filenames': [
-            'node_modules/jquery/dist/jquery.js',
-            'node_modules/underscore/underscore.js',
-            'js/blueslip.js',
-            'third/bootstrap/js/bootstrap.js',
-            'js/common.js',
-            'node_modules/moment/moment.js',
-            'node_modules/moment-timezone/builds/moment-timezone-with-data.js',
-        ],
-        'output_filename': 'min/common.js'
-    },
-    'landing-page': {
-        'source_filenames': [
-            'js/portico/landing-page.js',
-        ],
-        'output_filename': 'min/landing.js'
-    },
-    'signup': {
-        'source_filenames': [
-            'js/portico/signup.js',
-            'node_modules/jquery-validation/dist/jquery.validate.js',
-        ],
-        'output_filename': 'min/signup.js'
-    },
-    'zxcvbn': {
-        'source_filenames': [],
-        'minifed_source_filenames': [
-            'node_modules/zxcvbn/dist/zxcvbn.js',
-        ],
-        'output_filename': 'min/zxcvbn.js'
-    },
-    'api': {
-        'source_filenames': ['js/portico/api.js'],
-        'output_filename': 'min/api.js'
-    },
-    'app_debug': {
-        'source_filenames': ['js/debug.js'],
-        'output_filename': 'min/app_debug.js'
-    },
     'app': {
         'source_filenames': [
             'third/bootstrap-notify/js/bootstrap-notify.js',
@@ -837,11 +819,10 @@ JS_SPECS = {
             'third/jquery-filedrop/jquery.filedrop.js',
             'third/jquery-caret/jquery.caret.1.5.2.js',
             'node_modules/xdate/src/xdate.js',
-            'third/jquery-mousewheel/jquery.mousewheel.js',
             'third/jquery-throttle-debounce/jquery.ba-throttle-debounce.js',
             'third/jquery-idle/jquery.idle.js',
             'third/jquery-autosize/jquery.autosize.js',
-            'third/jquery-perfect-scrollbar/js/perfect-scrollbar.js',
+            'node_modules/perfect-scrollbar/dist/js/perfect-scrollbar.jquery.js',
             'third/lazyload/lazyload.js',
             'third/spectrum/spectrum.js',
             'third/sockjs/sockjs-0.3.4.js',
@@ -873,6 +854,8 @@ JS_SPECS = {
             'js/unread.js',
             'js/topic_list.js',
             'js/pm_list.js',
+            'js/pm_conversations.js',
+            'js/recent_senders.js',
             'js/stream_sort.js',
             'js/topic_generator.js',
             'js/stream_list.js',
@@ -914,7 +897,7 @@ JS_SPECS = {
             'js/copy_and_paste.js',
             'js/stream_popover.js',
             'js/popovers.js',
-            'js/modals.js',
+            'js/overlays.js',
             'js/typeahead_helper.js',
             'js/search_suggestion.js',
             'js/search.js',
@@ -936,6 +919,7 @@ JS_SPECS = {
             'js/message_events.js',
             'js/message_fetch.js',
             'js/server_events.js',
+            'js/server_events_dispatch.js',
             'js/zulip.js',
             'js/presence.js',
             'js/activity.js',
@@ -976,43 +960,25 @@ JS_SPECS = {
             'js/ui_init.js',
             'js/emoji_picker.js',
             'js/compose_ui.js',
-            # JS bundled by webpack is also included here if PIPELINE_ENABLED setting is true
         ],
         'output_filename': 'min/app.js'
-    },
-    'activity': {
-        'source_filenames': [
-            'third/sorttable/sorttable.js',
-        ],
-        'output_filename': 'min/activity.js'
-    },
-    'stats': {
-        'source_filenames': [
-            'js/stats/stats.js',
-        ],
-        'minifed_source_filenames': [
-            'node_modules/plotly.js/dist/plotly-basic.min.js',
-        ],
-        'output_filename': 'min/stats.js'
     },
     # We also want to minify sockjs separately for the sockjs iframe transport
     'sockjs': {
         'source_filenames': ['third/sockjs/sockjs-0.3.4.js'],
         'output_filename': 'min/sockjs-0.3.4.min.js'
-    },
-    'katex': {
-        'source_filenames': [
-            'node_modules/katex/dist/katex.js',
-        ],
-        'output_filename': 'min/katex.js'
     }
 }
 
-if PIPELINE_ENABLED:
-    # This is also done in test_settings.py, see comment there..
-    JS_SPECS['app']['source_filenames'].append('js/bundle.js')
-
 app_srcs = JS_SPECS['app']['source_filenames']
+
+WEBPACK_STATS_FILE = 'webpack-stats-dev.json' if DEVELOPMENT else 'webpack-stats-production.json'
+WEBPACK_LOADER = {
+    'DEFAULT': {
+        'BUNDLE_DIR_NAME': 'webpack-bundles/',
+        'STATS_FILE': os.path.join(STATIC_ROOT, 'webpack-bundles', WEBPACK_STATS_FILE),
+    }
+}
 
 ########################################################################
 # LOGGING SETTINGS
@@ -1241,7 +1207,7 @@ else:
 # SOCIAL_AUTH_GITHUB_KEY is set in /etc/zulip/settings.py
 SOCIAL_AUTH_GITHUB_SECRET = get_secret('social_auth_github_secret')
 SOCIAL_AUTH_LOGIN_ERROR_URL = '/login/'
-SOCIAL_AUTH_GITHUB_SCOPE = ['email']
+SOCIAL_AUTH_GITHUB_SCOPE = ['user:email']
 SOCIAL_AUTH_GITHUB_ORG_KEY = SOCIAL_AUTH_GITHUB_KEY
 SOCIAL_AUTH_GITHUB_ORG_SECRET = SOCIAL_AUTH_GITHUB_SECRET
 SOCIAL_AUTH_GITHUB_TEAM_KEY = SOCIAL_AUTH_GITHUB_KEY
@@ -1250,6 +1216,9 @@ SOCIAL_AUTH_GITHUB_TEAM_SECRET = SOCIAL_AUTH_GITHUB_SECRET
 ########################################################################
 # EMAIL SETTINGS
 ########################################################################
+
+# Django setting. Not used in the Zulip codebase.
+DEFAULT_FROM_EMAIL = ZULIP_ADMINISTRATOR
 
 if EMAIL_BACKEND is not None:
     # If the server admin specified a custom email backend, use that.
@@ -1271,7 +1240,7 @@ if vars().get("AUTH_LDAP_BIND_PASSWORD") is None:
 
 # Set the sender email address for Django traceback error reporting
 if SERVER_EMAIL is None:
-    SERVER_EMAIL = DEFAULT_FROM_EMAIL
+    SERVER_EMAIL = ZULIP_ADMINISTRATOR
 
 ########################################################################
 # MISC SETTINGS
@@ -1284,6 +1253,6 @@ if PRODUCTION:
 # This is a debugging option only
 PROFILE_ALL_REQUESTS = False
 
-CROSS_REALM_BOT_EMAILS = set(('feedback@zulip.com', 'notification-bot@zulip.com'))
+CROSS_REALM_BOT_EMAILS = set(('feedback@zulip.com', 'notification-bot@zulip.com', 'welcome-bot@zulip.com'))
 
 CONTRIBUTORS_DATA = os.path.join(STATIC_ROOT, 'generated/github-contributors.json')

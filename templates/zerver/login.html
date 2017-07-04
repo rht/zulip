@@ -3,25 +3,7 @@
 
 {% block customhead %}
     {{ super() }}
-    {{ minified_js('signup')|safe }}
-{% endblock %}
-
-{% block os_announcement %}
-  {% if show_oss_announcement %}
-  <div class="os-headline-container">
-    <img src="/static/images/logo/zballoon.png" class="os-illustration" alt="Zulip balloon" />
-    <div class="main-headline-text">
-      <span class="tagline os-tagline">
-         {{ _('Zulip has been released as open source software!') }}
-      </span>
-      {% trans %}
-      <span class="footnote os-footnote">
-         Read the <a href="https://blogs.dropbox.com/tech/2015/09/open-sourcing-zulip-a-dropbox-hack-week-project" target="_blank">announcement</a> or go to <a href="https://www.zulip.org" target="_blank">the Zulip open source project website</a>.
-      </span>
-      {% endtrans %}
-    </div>
-  </div>
-  {% endif %}
+    {{ render_bundle('signup') }}
 {% endblock %}
 
 {% block portico_content %}
@@ -32,9 +14,9 @@
 {% if password_auth_enabled %}
 <script type="text/javascript">
 {% if email %}
-autofocus('#id_password');
+common.autofocus('#id_password');
 {% else %}
-autofocus('#id_username');
+common.autofocus('#id_username');
 {% endif %}
 </script>
 {% endif %}
@@ -60,7 +42,7 @@ autofocus('#id_username');
             {% if realm_name %}
             <div class="left-side">
                 <div class="org-header">
-                    <div class="avatar" style="background-image: url('{{ realm_icon }}')"></div>
+                    <img class="avatar" src="{{ realm_icon }}" alt="" />
                     <div class="info-box">
                         <div class="organization-name">{{ realm_name }}</div>
                         <div class="organization-path">{{ realm_uri }}</div>
@@ -97,14 +79,14 @@ autofocus('#id_username');
                             maxlength="72" required />
                         <label for="id_username">{{ _('Email') }}</label>
                         <div class="required"></div>
-                        <img class="valid" src="/static/images/checkbox-valid.svg" />
+                        <img class="valid" src="/static/images/checkbox-valid.svg" alt="{{ _('Valid') }}" />
                     </div>
 
                     <div class="input-box no-validation">
                         <input id="id_password" name="password" class="required" type="password" required />
                         <label for="id_password" class="control-label">{{ _('Password') }}</label>
                         <div class="required"></div>
-                        <img class="valid" src="/static/images/checkbox-valid.svg" />
+                        <img class="valid" src="/static/images/checkbox-valid.svg" alt="{{ _('Valid') }}" />
                     </div>
 
                     {% if form.errors %}

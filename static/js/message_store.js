@@ -49,6 +49,10 @@ exports.process_message_for_recent_private_messages = function (message) {
         return;
     }
 
+    _.each(user_ids, function (user_id) {
+        pm_conversations.set_partner(user_id);
+    });
+
     var user_ids_string = user_ids.join(',');
 
     if (!user_ids_string) {
@@ -148,6 +152,8 @@ exports.add_message_metadata = function (message) {
 
         stream_data.process_message_for_recent_topics(message);
         exports.set_topic_edit_properties(message);
+
+        recent_senders.process_message_for_senders(message);
         break;
 
     case 'private':
@@ -168,10 +174,6 @@ exports.add_message_metadata = function (message) {
     }
     stored_messages[message.id] = message;
     return message;
-};
-
-exports.clear = function clear() {
-    this.stored_messages = {};
 };
 
 util.execute_early(function () {

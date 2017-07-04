@@ -34,14 +34,13 @@ package_info = dict(
     author='Zulip Open Source Project',
     author_email='zulip-devel@googlegroups.com',
     classifiers=[
-        'Development Status :: 3 - Alpha',
+        'Development Status :: 4 - Beta',
         'Environment :: Web Environment',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: MIT License',
         'Topic :: Communications :: Chat',
     ],
-    url='https://www.zulip.org/dist/api/',
-    packages=['zulip'],
+    url='https://www.zulip.org/',
     data_files=[('share/zulip/examples',
                  ["examples/zuliprc",
                   "examples/create-user",
@@ -60,8 +59,10 @@ package_info = dict(
     entry_points={
         'console_scripts': [
             'zulip-send=zulip.send:main',
+            'zulip-bot-server=zulip.bot_server:main',
         ],
     },
+    test_suite='tests',
 )  # type: Dict[str, Any]
 
 setuptools_info = dict(
@@ -69,12 +70,16 @@ setuptools_info = dict(
                       'simplejson',
                       'six',
                       'typing>=3.5.2.2',
+                      'flask>=0.12.2',
+                      'mock>=2.0.0',
                       ],
 )
 
 try:
-    from setuptools import setup
+    from setuptools import setup, find_packages
     package_info.update(setuptools_info)
+    package_info['packages'] = find_packages(exclude=["tests"])
+
 except ImportError:
     from distutils.core import setup
     from distutils.version import LooseVersion
@@ -90,6 +95,13 @@ except ImportError:
     except (ImportError, AssertionError):
         print("requests >=0.12.1 is not installed", file=sys.stderr)
         sys.exit(1)
+
+    package_list = ['zulip', 'bots_api', 'bots']
+    bots_dirs = os.listdir('bots')
+    for bot in bots_dirs:
+        if os.path.isdir(os.path.join('bots', bot)):
+            package_list.append('bots.' + bot)
+    package_info['packages'] = package_list
 
 
 setup(**package_info)

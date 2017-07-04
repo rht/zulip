@@ -154,7 +154,7 @@ def cache_with_key(keyfunc, cache_name=None, timeout=None, with_statsd_key=None)
         # type: (Callable[..., Any]) -> (Callable[..., Any])
         @wraps(func)
         def func_with_caching(*args, **kwargs):
-            # type: (*Any, **Any) -> Callable[..., Any]
+            # type: (*Any, **Any) -> Any
             key = keyfunc(*args, **kwargs)
 
             val = cache_get(key, cache_name=cache_name)
@@ -333,7 +333,7 @@ def active_user_dicts_in_realm_cache_key(realm):
     # type: (Realm) -> Text
     return u"active_user_dicts_in_realm:%s" % (realm.id,)
 
-bot_dict_fields = ['id', 'full_name', 'short_name', 'email',
+bot_dict_fields = ['id', 'full_name', 'short_name', 'bot_type', 'email',
                    'is_active', 'default_sending_stream__name',
                    'realm_id',
                    'default_events_register_stream__name',

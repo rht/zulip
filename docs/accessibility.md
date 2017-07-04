@@ -32,7 +32,7 @@ as it is not possible for some content.)
 There are tools available to automatically audit a web page for compliance
 with many of the WCAG guidelines.  Here are some of the more useful ones:
 
-* [Accessibility Developer Tools][chrome-webstory]
+* [Accessibility Developer Tools][chrome-webstore]
   This open source Chrome extension from Google adds an accessibility audit to
   the "Audits" tab of the Chrome Developer Tools.  The audit is performed
   against the page's DOM via JavaScript, allowing it to identify some issues
@@ -70,6 +70,8 @@ If you want to help make Zulip more accessible, here is a list of the
 For more information about making Zulip accessible to as many users as
 possible, the following resources may be useful.
 
+* [Font Awesome accessibility guide](http://fontawesome.io/accessibility/),
+  which is especially helpful since Zulip uses Font Awesome for its icons.
 * [Web Content Accessibility Guidelines (WCAG) 2.0](https://www.w3.org/TR/WCAG/)
 * [WAI-ARIA](https://www.w3.org/WAI/intro/aria) - Web Accessibility Initiative
   Accessible Rich Internet Application Suite

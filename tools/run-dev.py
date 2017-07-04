@@ -55,6 +55,10 @@ parser.add_option('--test',
                   action='store_true', dest='test',
                   help='Use the testing database and ports')
 
+parser.add_option('--minify',
+                  action='store_true', dest='minify',
+                  help='Minifies assets for testing in dev')
+
 parser.add_option('--interface',
                   action='store', dest='interface',
                   default=None, help='Set the IP or hostname for the proxy to listen on')
@@ -186,7 +190,10 @@ if options.test:
     # for the Casper tests.
     subprocess.check_call('./tools/webpack')
 else:
-    cmds += [['./tools/webpack', '--watch', '--port', str(webpack_port)]]
+    webpack_cmd = ['./tools/webpack', '--watch', '--port', str(webpack_port)]
+    if options.minify:
+        webpack_cmd.append('--minify')
+    cmds.append(webpack_cmd)
 for cmd in cmds:
     subprocess.Popen(cmd)
 
@@ -379,8 +386,8 @@ class Application(web.Application):
             (r"/json/events.*", TornadoHandler),
             (r"/api/v1/events.*", TornadoHandler),
             (r"/webpack.*", WebPackHandler),
+            (r"/sockjs-node.*", WebPackHandler),
             (r"/sockjs.*", TornadoHandler),
-            (r"/socket.io.*", WebPackHandler),
             (r"/.*", DjangoHandler)
         ]
         super(Application, self).__init__(handlers, enable_logging=enable_logging)

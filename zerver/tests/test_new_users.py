@@ -5,6 +5,7 @@ from zerver.lib.test_classes import ZulipTestCase
 from zerver.signals import get_device_browser, get_device_os
 from zerver.lib.actions import notify_new_user
 from zerver.models import Recipient, Stream
+from zerver.lib.initial_password import initial_password
 
 class SendLoginEmailTest(ZulipTestCase):
     """
@@ -21,12 +22,17 @@ class SendLoginEmailTest(ZulipTestCase):
         # type: () -> None
         with self.settings(SEND_LOGIN_EMAILS=True):
             self.assertTrue(settings.SEND_LOGIN_EMAILS)
+            # we don't use the self.login method since we spoof the user-agent
             email = self.example_email('hamlet')
-            self.login(email)
+            password = initial_password(email)
+            firefox_windows = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:47.0) Gecko/20100101 Firefox/47.0"
+            self.client_post("/accounts/login/", info={"username": email, "password": password},
+                             HTTP_USER_AGENT=firefox_windows)
 
             # email is sent and correct subject
             self.assertEqual(len(mail.outbox), 1)
-            self.assertEqual(mail.outbox[0].subject, 'A new login to your Zulip account.')
+            subject = 'New login from Firefox on Windows'
+            self.assertEqual(mail.outbox[0].subject, subject)
 
     def test_dont_send_login_emails_if_send_login_emails_is_false(self):
         # type: () -> None
@@ -42,7 +48,8 @@ class SendLoginEmailTest(ZulipTestCase):
             self.register("test@zulip.com", "test")
 
             for email in mail.outbox:
-                self.assertNotEqual(email.subject, 'A new login to your Zulip account.')
+                subject = 'New login from an unknown browser on an unknown operating system'
+                self.assertNotEqual(email.subject, subject)
 
     def test_without_path_info_dont_send_login_emails_for_new_user_registration_logins(self):
         # type: () -> None
@@ -51,7 +58,8 @@ class SendLoginEmailTest(ZulipTestCase):
             self.submit_reg_form_for_user("orange@zulip.com", "orange", PATH_INFO='')
 
             for email in mail.outbox:
-                self.assertNotEqual(email.subject, 'A new login to your Zulip account.')
+                subject = 'New login from an unknown browser on an unknown operating system'
+                self.assertNotEqual(email.subject, subject)
 
 class TestBrowserAndOsUserAgentStrings(ZulipTestCase):
 
@@ -79,6 +87,21 @@ class TestBrowserAndOsUserAgentStrings(ZulipTestCase):
             ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) ' +
                 'AppleWebKit/602.3.12 (KHTML, like Gecko) ' +
                 'Version/10.0.2 Safari/602.3.12', 'Safari', 'MacOS'),
+            ('ZulipAndroid/1.0', 'Zulip', 'Android'),
+            ('ZulipMobile/1.0', 'Zulip', None),
+            ('ZulipElectron/1.1.0-beta Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+             'AppleWebKit/537.36 (KHTML, like Gecko) Zulip/1.1.0-beta ' +
+             'Chrome/56.0.2924.87 Electron/1.6.8 Safari/537.36', 'Zulip', 'Windows'),
+            ('Mozilla/5.0 (X11; Linux i686) AppleWebKit/535.7 (KHTML, '
+             'like Gecko) Ubuntu/11.10 Chromium/16.0.912.77 '
+             'Chrome/16.0.912.77 Safari/535.7', 'Chromium', 'Linux'),
+            ('Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 '
+             '(KHTML, like Gecko) Chrome/28.0.1500.52 Safari/537.36 '
+             'OPR/15.0.1147.100', 'Opera', 'Windows'),
+            ('Mozilla/5.0 (Windows NT 10.0; <64-bit tags>) AppleWebKit/'
+             '<WebKit Rev> (KHTML, like Gecko) Chrome/<Chrome Rev> Safari'
+             '/<WebKit Rev> Edge/<EdgeHTML Rev>.'
+             '<Windows Build>', 'Edge', 'Windows'),
             ('', None, None),
         ]
 
@@ -107,3 +130,17 @@ class TestNotifyNewUser(ZulipTestCase):
         self.assertEqual(actual_stream.name, 'signups')
         self.assertEqual(message.recipient.type, Recipient.STREAM)
         self.assertIn("**INTERNAL SIGNUP**", message.content)
+
+    def test_notify_realm_of_new_user(self):
+        # type: () -> None
+        new_user = self.example_user('cordelia')
+        stream = self.make_stream('announce')
+        new_user.realm.notifications_stream = stream
+        new_user.realm.save()
+        new_user = self.example_user('cordelia')
+        notify_new_user(new_user)
+
+        message = self.get_last_message()
+        self.assertEqual(message.recipient.type, Recipient.STREAM)
+        actual_stream = Stream.objects.get(id=message.recipient.type_id)
+        self.assertEqual(actual_stream.name, 'announce')

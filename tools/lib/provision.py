@@ -6,6 +6,8 @@ import logging
 import argparse
 import platform
 import subprocess
+import glob
+import hashlib
 
 os.environ["PYTHONUNBUFFERED"] = "y"
 
@@ -154,16 +156,27 @@ user_id = os.getuid()
 
 def setup_shell_profile(shell_profile):
     # type: (str) -> None
-    source_activate_command = "source %s\n" % (os.path.join(VENV_PATH, "bin", "activate"),)
     shell_profile_path = os.path.expanduser(shell_profile)
 
-    if os.path.exists(shell_profile_path):
-        with open(shell_profile_path, 'a+') as shell_profile_file:
-            if source_activate_command not in shell_profile_file.read():
-                shell_profile_file.writelines(source_activate_command)
-    else:
-        with open(shell_profile_path, 'w') as shell_profile_file:
-            shell_profile_file.writelines(source_activate_command)
+    def write_command(command):
+        # type: (str) -> None
+        if os.path.exists(shell_profile_path):
+            with open(shell_profile_path, 'a+') as shell_profile_file:
+                if command not in shell_profile_file.read():
+                    shell_profile_file.writelines(command + '\n')
+        else:
+            with open(shell_profile_path, 'w') as shell_profile_file:
+                shell_profile_file.writelines(command + '\n')
+
+    source_activate_command = "source " + os.path.join(VENV_PATH, "bin", "activate")
+    write_command(source_activate_command)
+    write_command('cd /srv/zulip')
+
+def install_apt_deps():
+    # type: () -> None
+    # setup-apt-repo does an `apt-get update`
+    run(["sudo", "./scripts/lib/setup-apt-repo"])
+    run(["sudo", "apt-get", "-y", "install", "--no-install-recommends"] + APT_DEPENDENCIES[codename])
 
 def main(options):
     # type: (Any) -> int
@@ -173,8 +186,34 @@ def main(options):
     os.chdir(ZULIP_PATH)
 
     # setup-apt-repo does an `apt-get update`
-    run(["sudo", "./scripts/lib/setup-apt-repo"])
-    run(["sudo", "apt-get", "-y", "install", "--no-install-recommends"] + APT_DEPENDENCIES[codename])
+    # hash the apt dependencies
+    sha_sum = hashlib.sha1()
+
+    for apt_depedency in APT_DEPENDENCIES[codename]:
+        sha_sum.update(apt_depedency.encode('utf8'))
+    # hash the content of setup-apt-repo
+    sha_sum.update(open('scripts/lib/setup-apt-repo').read().encode('utf8'))
+
+    new_apt_dependencies_hash = sha_sum.hexdigest()
+    last_apt_dependencies_hash = None
+
+    try:
+        hash_file = open('var/apt_dependenices_hash', 'r+')
+        last_apt_dependencies_hash = hash_file.read()
+    except IOError:
+        run(['touch', 'var/apt_dependenices_hash'])
+        hash_file = open('var/apt_dependenices_hash', 'r+')
+
+    if (new_apt_dependencies_hash != last_apt_dependencies_hash):
+        try:
+            install_apt_deps()
+        except subprocess.CalledProcessError:
+            # Might be a failure due to network connection issues. Retrying...
+            print(WARNING + "`apt-get -y install` failed while installing dependencies; retrying..." + ENDC)
+            install_apt_deps()
+        hash_file.write(new_apt_dependencies_hash)
+    else:
+        print("No need to apt operations.")
 
     if options.is_travis:
         if PY2:
@@ -214,6 +253,10 @@ def main(options):
     # create linecoverage directory`var/node-coverage`
     run(["mkdir", "-p", NODE_TEST_COVERAGE_DIR_PATH])
 
+    if not os.path.isdir(EMOJI_CACHE_PATH):
+        run(["sudo", "mkdir", EMOJI_CACHE_PATH])
+    run(["sudo", "chown", "%s:%s" % (user_id, user_id), EMOJI_CACHE_PATH])
+    run(["tools/setup/emoji/download-emoji-data"])
     run(["tools/setup/emoji/build_emoji"])
     run(["tools/setup/build_pygments_data.py"])
     run(["scripts/setup/generate_secrets.py", "--development"])
@@ -231,19 +274,51 @@ def main(options):
     if not options.is_production_travis:
         # These won't be used anyway
         run(["scripts/setup/configure-rabbitmq"])
-        run(["tools/setup/postgres-init-dev-db"])
-        run(["tools/do-destroy-rebuild-database"])
         # Need to set up Django before using is_template_database_current.
         os.environ.setdefault("DJANGO_SETTINGS_MODULE", "zproject.settings")
         import django
         django.setup()
+        from zerver.lib.str_utils import force_bytes
         from zerver.lib.test_fixtures import is_template_database_current
+
+        if options.is_force or not is_template_database_current(
+                migration_status="var/migration_status_dev",
+                settings="zproject.settings",
+                database_name="zulip",
+        ):
+            run(["tools/setup/postgres-init-dev-db"])
+            run(["tools/do-destroy-rebuild-database"])
+        else:
+            print("No need to regenerate the dev DB.")
+
         if options.is_force or not is_template_database_current():
             run(["tools/setup/postgres-init-test-db"])
             run(["tools/do-destroy-rebuild-test-database"])
         else:
             print("No need to regenerate the test DB.")
-        run(["./manage.py", "compilemessages"])
+
+        # Consider updating generated translations data: both `.mo`
+        # files and `language-options.json`.
+        sha1sum = hashlib.sha1()
+        paths = ['zerver/management/commands/compilemessages.py']
+        paths += glob.glob('static/locale/*/LC_MESSAGES/*.po')
+        paths += glob.glob('static/locale/*/translations.json')
+
+        for path in paths:
+            with open(path, 'r') as file_to_hash:
+                sha1sum.update(force_bytes(file_to_hash.read()))
+
+        new_compilemessages_hash = sha1sum.hexdigest()
+        run(['touch', 'var/last_compilemessages_hash'])
+        with open('var/last_compilemessages_hash', 'r') as hash_file:
+            last_compilemessages_hash = hash_file.read()
+
+        if options.is_force or (new_compilemessages_hash != last_compilemessages_hash):
+            with open('var/last_compilemessages_hash', 'w') as hash_file:
+                hash_file.write(new_compilemessages_hash)
+            run(["./manage.py", "compilemessages"])
+        else:
+            print("No need to run `manage.py compilemessages`.")
 
     # Here we install nvm, node, and npm.
     run(["sudo", "scripts/lib/install-node"])

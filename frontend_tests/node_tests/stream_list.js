@@ -1,56 +1,37 @@
-global.stub_out_jquery();
+set_global('$', global.make_zjquery());
+
+set_global('templates', {});
 
 add_dependencies({
-    Handlebars: 'handlebars',
     colorspace: 'js/colorspace',
+    Filter: 'js/filter',
     hash_util: 'js/hash_util',
-    hashchange: 'js/hashchange',
-    muting: 'js/muting',
     narrow: 'js/narrow',
     stream_color: 'js/stream_color',
     stream_data: 'js/stream_data',
     stream_sort: 'js/stream_sort',
-    subs: 'js/subs',
-    templates: 'js/templates',
     unread: 'js/unread',
+    unread_ui: 'js/unread_ui',
     util: 'js/util',
 });
 
 var stream_list = require('js/stream_list.js');
 
+var noop = function () {};
+var return_false = function () { return false; };
+var return_true = function () { return true; };
 
-var jsdom = require("jsdom");
-var window = jsdom.jsdom().defaultView;
-global.$ = require('jquery')(window);
-$.fn.expectOne = function () {
-    assert(this.length === 1);
-    return this;
-};
-
-global.compile_template('stream_sidebar_row');
-global.compile_template('stream_privacy');
-
-function clear_filters() {
-    var stream_search_box = $('<input class="stream-list-filter" type="text" placeholder="Search streams">');
-    var stream_filters = $('<ul id="stream_filters">');
-    $("body").empty();
-    $("body").append(stream_search_box);
-    $("body").append(stream_filters);
-
-}
+set_global('topic_list', {});
 
 (function test_create_sidebar_row() {
     // Make a couple calls to create_sidebar_row() and make sure they
     // generate the right markup as well as play nice with get_stream_li().
-
-    clear_filters();
 
     var devel = {
         name: 'devel',
         stream_id: 100,
         color: 'blue',
         subscribed: true,
-        id: 5,
     };
     global.stream_data.add_sub('devel', devel);
 
@@ -59,7 +40,6 @@ function clear_filters() {
         stream_id: 200,
         color: 'green',
         subscribed: true,
-        id: 6,
     };
     global.stream_data.add_sub('social', social);
 
@@ -67,111 +47,296 @@ function clear_filters() {
         return 42;
     };
 
-    stream_list.create_sidebar_row(devel);
-    stream_list.create_sidebar_row(social);
+    (function create_devel_sidebar_row() {
+        var devel_value = $('devel-value');
+        var devel_count = $('devel-count');
+        $('devel-stub-html').add_child('.count', devel_count);
+        $('devel-count').add_child('.value', devel_value);
+
+        global.templates.render = function (template_name, data) {
+            assert.equal(template_name, 'stream_sidebar_row');
+            assert.equal(data.uri, '#narrow/stream/devel');
+            return 'devel-stub-html';
+        };
+
+        stream_list.create_sidebar_row(devel);
+        assert.equal(devel_value.text(), '42');
+    }());
+
+    (function create_social_sidebar_row() {
+        var social_value = $('social-value');
+        var social_count = $('social-count');
+        $('social-stub-html').add_child('.count', social_count);
+        $('social-count').add_child('.value', social_value);
+
+        global.templates.render = function (template_name, data) {
+            assert.equal(template_name, 'stream_sidebar_row');
+            assert.equal(data.uri, '#narrow/stream/social');
+            return 'social-stub-html';
+        };
+
+        stream_list.create_sidebar_row(social);
+        assert.equal(social_value.text(), '42');
+    }());
+
+    function set_getter(elem, stub_value) {
+        elem.get = function (idx) {
+            assert.equal(idx, 0);
+            return stub_value;
+        };
+    }
+
+    set_getter($('<hr class="stream-split">'), 'split');
+    set_getter($('devel-stub-html'), 'devel-sidebar');
+    set_getter($('social-stub-html'), 'social-sidebar');
+
+    var appended_elems;
+    $('#stream_filters').append = function (elems) {
+        appended_elems = elems;
+    };
+
     stream_list.build_stream_list();
 
-    var html = $("body").html();
-    global.write_test_output("test_create_sidebar_row", html);
+    var expected_elems = [
+        'split',
+        'devel-sidebar',
+        'social-sidebar',
+    ];
 
-    var li = stream_list.get_stream_li(social.stream_id);
-    assert.equal(li.attr('data-name'), 'social');
-    assert.equal(li.find('a.stream-name').text().trim(), 'social');
-    assert(li.find('.arrow').find("i").hasClass("icon-vector-chevron-down"));
+    assert.deepEqual(appended_elems, expected_elems);
 
-    global.append_test_output("Then make 'social' private.");
-    global.stream_data.get_sub('social').invite_only = true;
+    var social_li = $('social-stub-html');
+    var stream_id = social.stream_id;
 
-    stream_list.redraw_stream_privacy('social');
+    var privacy_elem = $('privacy-stub');
+    social_li.add_child('.stream-privacy', privacy_elem);
 
-    html = $("body").html();
-    global.append_test_output(html);
+    social.invite_only = true;
+    social.color = '#222222';
+    global.templates.render = function (template_name, data) {
+        assert.equal(template_name, 'stream_privacy');
+        assert.equal(data.invite_only, true);
+        assert.equal(data.dark_background, 'dark_background');
+        return '<div>privacy-html';
+    };
+    stream_list.redraw_stream_privacy(social);
+    assert.equal(privacy_elem.html(), '<div>privacy-html');
 
-    assert(li.find('.stream-privacy').find("i").hasClass("icon-vector-lock"));
+    stream_list.set_in_home_view(stream_id, false);
+    assert(social_li.hasClass('out_of_home_view'));
+
+    stream_list.set_in_home_view(stream_id, true);
+    assert(!social_li.hasClass('out_of_home_view'));
+
+    var row = stream_list.stream_sidebar.get_row(stream_id);
+    stream_data.is_active = return_true;
+    row.update_whether_active();
+    assert(!social_li.hasClass('inactive_stream'));
+
+    stream_data.is_active = return_false;
+    row.update_whether_active();
+    assert(social_li.hasClass('inactive_stream'));
+
+    var removed;
+    social_li.remove = function () {
+        removed = true;
+    };
+
+    row.remove();
+    assert(removed);
 }());
 
-
-(function test_sort_streams() {
-    clear_filters();
-
+function initialize_stream_data() {
     stream_data.clear_subscriptions();
+
+    function add_row(sub) {
+        global.stream_data.add_sub(sub.name, sub);
+        var row = {
+            update_whether_active: function () {},
+            get_li: function () {
+                var selector = 'stub-' + sub.name;
+                return $(selector);
+            },
+        };
+        stream_list.stream_sidebar.set_row(sub.stream_id, row);
+    }
 
     // pinned streams
     var develSub = {
         name: 'devel',
         stream_id: 1000,
         color: 'blue',
-        id: 5,
         pin_to_top: true,
         subscribed: true,
     };
-    stream_list.create_sidebar_row(develSub);
-    global.stream_data.add_sub('devel', develSub);
+    add_row(develSub);
 
     var RomeSub = {
         name: 'Rome',
         stream_id: 2000,
         color: 'blue',
-        id: 6,
         pin_to_top: true,
         subscribed: true,
     };
-    stream_list.create_sidebar_row(RomeSub);
-    global.stream_data.add_sub('Rome', RomeSub);
+    add_row(RomeSub);
 
     var testSub = {
         name: 'test',
         stream_id: 3000,
         color: 'blue',
-        id: 7,
         pin_to_top: true,
         subscribed: true,
     };
-    stream_list.create_sidebar_row(testSub);
-    global.stream_data.add_sub('test', testSub);
+    add_row(testSub);
 
     // unpinned streams
     var announceSub = {
         name: 'announce',
         stream_id: 4000,
         color: 'green',
-        id: 8,
         pin_to_top: false,
         subscribed: true,
     };
-    stream_list.create_sidebar_row(announceSub);
-    global.stream_data.add_sub('announce', announceSub);
+    add_row(announceSub);
 
     var DenmarkSub = {
         name: 'Denmark',
         stream_id: 5000,
         color: 'green',
-        id: 9,
         pin_to_top: false,
         subscribed: true,
     };
-    stream_list.create_sidebar_row(DenmarkSub);
-    global.stream_data.add_sub('Denmark', DenmarkSub);
+    add_row(DenmarkSub);
 
     var carSub = {
         name: 'cars',
         stream_id: 6000,
         color: 'green',
-        id: 10,
         pin_to_top: false,
         subscribed: true,
     };
-    stream_list.create_sidebar_row(carSub);
-    global.stream_data.add_sub('cars', carSub);
+    add_row(carSub);
+}
 
+(function test_narrowing() {
+    initialize_stream_data();
+
+    var document = 'document-stub';
+
+    set_global('document', document);
+    set_global('narrow_state', {
+        stream: function () { return 'devel'; },
+        topic: noop,
+    });
+
+    var pm_expanded;
+
+    set_global('pm_list', {
+        close: noop,
+        expand: function () { pm_expanded = true; },
+    });
+
+    topic_list.set_click_handlers = noop;
+    topic_list.is_zoomed = return_false;
+    topic_list.remove_expanded_topics = noop;
+    topic_list.rebuild = noop;
+    stream_list.scroll_element_into_container = noop;
+
+    var scrollbar_updated = false;
+    $.stub_selector("#stream-filters-container", {
+        perfectScrollbar: function () { scrollbar_updated = true; },
+    });
+
+    assert(!$('stub-devel').hasClass('active-filter'));
+
+    stream_list.initialize();
+
+    function activate_filter(filter) {
+        var data = {
+            filter: filter,
+        };
+        $(document).trigger($.Event('narrow_activated.zulip', data));
+    }
+
+    var filter;
+
+    filter = new Filter([
+        {operator: 'stream', operand: 'devel'},
+    ]);
+    activate_filter(filter);
+    assert($('stub-devel').hasClass('active-filter'));
+    assert(scrollbar_updated);  // Make sure we are updating perfectScrollbar.
+
+    scrollbar_updated = false;
+    filter = new Filter([
+        {operator: 'stream', operand: 'cars'},
+        {operator: 'topic', operand: 'sedans'},
+    ]);
+    activate_filter(filter);
+    assert(!$("ul.filters li").hasClass('active-filter'));
+    assert(!$('stub-cars').hasClass('active-filter')); // false because of topic
+    assert(scrollbar_updated);  // Make sure we are updating perfectScrollbar.
+
+    assert(!pm_expanded);
+    filter = new Filter([
+        {operator: 'is', operand: 'private'},
+    ]);
+    activate_filter(filter);
+    assert(pm_expanded);
+
+    filter = new Filter([
+        {operator: 'is', operand: 'mentioned'},
+    ]);
+    activate_filter(filter);
+    assert(stream_list.get_global_filter_li('mentioned').hasClass('active-filter'));
+
+    filter = new Filter([
+        {operator: 'in', operand: 'home'},
+    ]);
+    activate_filter(filter);
+    assert(stream_list.get_global_filter_li('home').hasClass('active-filter'));
+
+    filter = new Filter([
+        {operator: 'stream', operand: 'cars'},
+    ]);
+    activate_filter(filter);
+    assert(!$("ul.filters li").hasClass('active-filter'));
+    assert($('stub-cars').hasClass('active-filter'));
+}());
+
+(function test_sort_streams() {
+    stream_data.clear_subscriptions();
+
+    // Get coverage on early-exit.
+    stream_list.build_stream_list();
+
+    initialize_stream_data();
 
     global.stream_data.is_active = function (sub) {
         return sub.name !== 'cars';
     };
 
+
+    var appended_elems;
+    $('#stream_filters').append = function (elems) {
+        appended_elems = elems;
+    };
+
     stream_list.build_stream_list();
 
-    var streams = global.stream_sort.get_streams().slice(0, 6);
+    var expected_elems = [
+        'stub-devel',
+        'stub-Rome',
+        'stub-test',
+        'split',
+        'stub-announce',
+        'stub-Denmark',
+        'split',
+        'stub-cars',
+    ];
+    assert.deepEqual(appended_elems, expected_elems);
+
+    var streams = global.stream_sort.get_streams();
 
     assert.deepEqual(streams, [
         // three groups: pinned, normal, dormant
@@ -185,34 +350,124 @@ function clear_filters() {
         'cars',
     ]);
 
-    var li;
-    var hr;
+    var denmark_sub = stream_data.get_sub('Denmark');
+    var stream_id = denmark_sub.stream_id;
+    assert(stream_list.stream_sidebar.has_row_for(stream_id));
+    stream_list.remove_sidebar_row(stream_id);
+    assert(!stream_list.stream_sidebar.has_row_for(stream_id));
+}());
 
-    // verify pinned streams are sorted by lowercase stream name
-    li = stream_list.stream_sidebar.get_row(develSub.stream_id).get_li();
-    assert.equal(li.next().find('[ data-name="Rome"]').length, 1);
+(function test_update_count_in_dom() {
+    function make_elem(elem_selector, count_selector, value_selector) {
+        var elem = $(elem_selector);
+        var count = $(count_selector);
+        var value = $(value_selector);
+        elem.add_child('.count', count);
+        count.add_child('.value', value);
 
-    li = stream_list.stream_sidebar.get_row(RomeSub.stream_id).get_li();
-    assert.equal(li.next().find('[ data-name="test"]').length, 1);
+        return elem;
+    }
 
-    li = stream_list.stream_sidebar.get_row(testSub.stream_id).get_li();
+    var stream_li = make_elem(
+        'stream-li',
+        'stream-count',
+        'stream-value'
+    );
 
-    // <hr>
-    hr = li.next();
-    assert.equal(hr.attr('class'), 'stream-split');
 
-    // verify unpinned streams are sorted by lowercase stream name
-    assert.equal(hr.next().find('[ data-name="announce"]').length, 1);
+    stream_li.addClass('subscription_block');
+    stream_li.addClass('stream-with-count');
+    assert(stream_li.hasClass('stream-with-count'));
 
-    li = stream_list.stream_sidebar.get_row(announceSub.stream_id).get_li();
-    assert.equal(li.next().find('[ data-name="Denmark"]').length, 1);
+    make_elem(
+        "#global_filters li[data-name='mentioned']",
+        'mentioned-count',
+        'mentioned-value'
+    );
 
-    li = stream_list.stream_sidebar.get_row(DenmarkSub.stream_id).get_li();
+    make_elem(
+        "#global_filters li[data-name='home']",
+        'home-count',
+        'home-value'
+    );
 
-    // <hr>
-    hr = li.next();
-    assert.equal(hr.attr('class'), 'stream-split');
+    unread_ui.set_count_toggle_button = noop;
 
-    assert.equal(hr.next().find('[ data-name="cars"]').length, 1);
+    var stream_count = new Dict();
+    var stream_id = 11;
 
+    var stream_row = {
+        get_li: function () { return stream_li; },
+    };
+
+    stream_list.stream_sidebar.set_row(stream_id, stream_row);
+
+    stream_count.set(stream_id, 0);
+    var counts = {
+        stream_count: stream_count,
+        subject_count: new Dict(),
+        mentioned_message_count: 222,
+        home_unread_messages: 333,
+    };
+
+    stream_list.update_dom_with_unread_counts(counts);
+    assert.equal($('stream-value').text(), '');
+    assert(!stream_li.hasClass('stream-with-count'));
+
+    assert.equal($('mentioned-value').text(), '222');
+    assert.equal($('home-value').text(), '333');
+
+    stream_count.set(stream_id, 99);
+
+    stream_list.update_dom_with_unread_counts(counts);
+    assert.equal($('stream-value').text(), '99');
+    assert(stream_li.hasClass('stream-with-count'));
+
+    var topic_results;
+
+    topic_list.set_count = function (stream_id, topic, count) {
+        topic_results = {
+            stream_id: stream_id,
+            topic: topic,
+            count: count,
+        };
+    };
+
+    var topic_count = new Dict({fold_case: true});
+    topic_count.set('lunch', '555');
+    counts.subject_count.set(stream_id, topic_count);
+
+    stream_list.update_dom_with_unread_counts(counts);
+
+    assert.deepEqual(topic_results, {
+        stream_id: stream_id,
+        topic: 'lunch',
+        count: 555,
+    });
+}());
+
+(function test_create_initial_sidebar_rows() {
+    initialize_stream_data();
+
+    var html_dict = new Dict();
+
+    stream_list.stream_sidebar = {
+        has_row_for: return_false,
+        set_row: function (stream_id, widget) {
+            html_dict.set(stream_id, widget.get_li().html());
+        },
+    };
+
+    stream_list.update_count_in_dom = noop;
+
+    global.templates.render = function (template_name, data) {
+        assert.equal(template_name, 'stream_sidebar_row');
+        return '<div>stub-html-' + data.name;
+    };
+
+    // Test this code with stubs above...
+    stream_list.create_initial_sidebar_rows();
+
+    assert.equal(html_dict.get(1000), '<div>stub-html-devel');
+    assert.equal(html_dict.get(5000), '<div>stub-html-Denmark');
 }());

@@ -55,6 +55,8 @@ function message_matches_search_term(message, operator, operand) {
             return message.mentioned;
         } else if (operand === 'alerted') {
             return message.alerted;
+        } else if (operand === 'unread') {
+            return unread.message_unread(message);
         }
         return true; // is:whatever returns true
 
@@ -200,8 +202,6 @@ Filter.canonicalize_term = function (opts) {
     };
 };
 
-
-
 /* We use a variant of URI encoding which looks reasonably
    nice and still handles unambiguously cases such as
    spaces in operands.
@@ -293,6 +293,9 @@ Filter.unparse = function (operators) {
             return elem.operand;
         }
         var sign = elem.negated ? '-' : '';
+        if (elem.operator === '') {
+            return elem.operand;
+        }
         return sign + elem.operator + ':' + encodeOperand(elem.operand.toString());
     });
     return parts.join(' ');
@@ -416,10 +419,10 @@ Filter.operator_to_prefix = function (operator, negated) {
     var verb;
 
     if (operator === 'search') {
-        return negated ? 'Exclude' : 'Search for';
+        return negated ? 'exclude' : 'search for';
     }
 
-    verb = negated ? 'Exclude ' : 'Narrow to ';
+    verb = negated ? 'exclude ' : '';
 
     switch (operator) {
     case 'stream':
@@ -471,7 +474,7 @@ Filter.describe = function (operators) {
         if (is(operators[0], 'stream') && is(operators[1], 'topic')) {
             var stream = operators[0].operand;
             var topic = operators[1].operand;
-            var part = 'Narrow to ' + stream + ' > ' + topic;
+            var part = "stream " + stream + ' > ' + topic;
             parts = [part];
             operators = operators.slice(2);
         }
@@ -481,15 +484,17 @@ Filter.describe = function (operators) {
         var operand = elem.operand;
         var canonicalized_operator = Filter.canonicalize_operator(elem.operator);
         if (canonicalized_operator ==='is') {
-            var verb = elem.negated ? 'Exclude ' : 'Narrow to ';
+            var verb = elem.negated ? 'exclude ' : '';
             if (operand === 'private') {
-                return verb + 'all private messages';
+                return verb + 'private messages';
             } else if (operand === 'starred') {
                 return verb + 'starred messages';
             } else if (operand === 'mentioned') {
-                return verb + 'mentioned messages';
+                return verb + '@-mentions';
             } else if (operand === 'alerted') {
                 return verb + 'alerted messages';
+            } else if (operand === 'unread') {
+                return verb + 'unread messages';
             }
         } else {
             var prefix_for_operator = Filter.operator_to_prefix(canonicalized_operator,
@@ -498,7 +503,7 @@ Filter.describe = function (operators) {
                 return prefix_for_operator + ' ' + operand;
             }
         }
-        return 'Narrow to (unknown operator)';
+        return "unknown operand";
     });
     return parts.concat(more_parts).join(', ');
 };

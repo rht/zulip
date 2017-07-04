@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 # this list without any modification.
 IGNORED_PHRASES = [
     # Proper nouns and acronyms
+    r"Android",
     r"API",
     r"Cookie Bot",
     r"Dropbox",
@@ -24,6 +25,7 @@ IGNORED_PHRASES = [
     r"JSON",
     r"Kerberos",
     r"Mac",
+    r"MacOS",
     r"MiB",
     r"OTP",
     r"Pivotal",
@@ -41,6 +43,7 @@ IGNORED_PHRASES = [
     r"Zephyr",
     r"Zulip",
     r"iPhone",
+    r"iOS",
     r"Emoji One",
     # Code things
     r".zuliprc",

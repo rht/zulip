@@ -134,7 +134,7 @@ class GithubWebhookTest(WebhookTestCase):
     def test_issue_msg(self):
         # type: () -> None
         expected_message = u"baxterthehacker opened [Issue #2](https://github.com/baxterthehacker/public-repo/issues/2)\n\n~~~ quote\nIt looks like you accidently spelled 'commit' with two 't's.\n~~~"
-        self.send_and_test_stream_message('issue', self.EXPECTED_SUBJECT_ISSUE_EVENTS, expected_message, HTTP_X_GITHUB_EVENT='issue')
+        self.send_and_test_stream_message('issue', self.EXPECTED_SUBJECT_ISSUE_EVENTS, expected_message, HTTP_X_GITHUB_EVENT='issues')
 
     def test_membership_msg(self):
         # type: () -> None
@@ -203,7 +203,7 @@ class GithubWebhookTest(WebhookTestCase):
 
     def test_status_msg(self):
         # type: () -> None
-        expected_message = u"[9049f12](https://github.com/baxterthehacker/public-repo/commit/9049f1265b7d61be4a8904a9a27120d2064dab3b) changed it's status to success"
+        expected_message = u"[9049f12](https://github.com/baxterthehacker/public-repo/commit/9049f1265b7d61be4a8904a9a27120d2064dab3b) changed its status to success"
         self.send_and_test_stream_message('status', self.EXPECTED_SUBJECT_REPO_EVENTS, expected_message, HTTP_X_GITHUB_EVENT='status')
 
     def test_pull_request_review_msg(self):

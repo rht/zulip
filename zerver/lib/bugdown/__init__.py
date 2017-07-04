@@ -65,9 +65,9 @@ class BugdownRenderingException(Exception):
     pass
 
 def url_embed_preview_enabled_for_realm(message):
-    # type: (Message) -> bool
+    # type: (Optional[Message]) -> bool
     if message is not None:
-        realm = message.get_realm()
+        realm = message.get_realm() # type: Optional[Realm]
     else:
         realm = None
 
@@ -81,7 +81,7 @@ def image_preview_enabled_for_realm():
     # type: () -> bool
     global current_message
     if current_message is not None:
-        realm = current_message.get_realm()
+        realm = current_message.get_realm() # type: Optional[Realm]
     else:
         realm = None
     if not settings.INLINE_IMAGE_PREVIEW:
@@ -699,8 +699,57 @@ class Avatar(markdown.inlinepatterns.Pattern):
         return img
 
 path_to_name_to_codepoint = os.path.join(settings.STATIC_ROOT, "generated", "emoji", "name_to_codepoint.json")
-name_to_codepoint = ujson.load(open(path_to_name_to_codepoint))
-unicode_emoji_list = set([name_to_codepoint[name] for name in name_to_codepoint])
+with open(path_to_name_to_codepoint) as name_to_codepoint_file:
+    name_to_codepoint = ujson.load(name_to_codepoint_file)
+
+path_to_codepoint_to_name = os.path.join(settings.STATIC_ROOT, "generated", "emoji", "codepoint_to_name.json")
+with open(path_to_codepoint_to_name) as codepoint_to_name_file:
+    codepoint_to_name = ujson.load(codepoint_to_name_file)
+
+# All of our emojis(non ZWJ sequences) belong to one of these unicode blocks:
+# \U0001f100-\U0001f1ff - Enclosed Alphanumeric Supplement
+# \U0001f200-\U0001f2ff - Enclosed Ideographic Supplement
+# \U0001f300-\U0001f5ff - Miscellaneous Symbols and Pictographs
+# \U0001f600-\U0001f64f - Emoticons (Emoji)
+# \U0001f680-\U0001f6ff - Transport and Map Symbols
+# \U0001f900-\U0001f9ff - Supplemental Symbols and Pictographs
+# \u2000-\u206f         - General Punctuation
+# \u2300-\u23ff         - Miscellaneous Technical
+# \u2400-\u243f         - Control Pictures
+# \u2440-\u245f         - Optical Character Recognition
+# \u2460-\u24ff         - Enclosed Alphanumerics
+# \u2500-\u257f         - Box Drawing
+# \u2580-\u259f         - Block Elements
+# \u25a0-\u25ff         - Geometric Shapes
+# \u2600-\u26ff         - Miscellaneous Symbols
+# \u2700-\u27bf         - Dingbats
+# \u2900-\u297f         - Supplemental Arrows-B
+# \u2b00-\u2bff         - Miscellaneous Symbols and Arrows
+# \u3000-\u303f         - CJK Symbols and Punctuation
+# \u3200-\u32ff         - Enclosed CJK Letters and Months
+unicode_emoji_regex = u'(?P<syntax>['\
+    u'\U0001F100-\U0001F64F'    \
+    u'\U0001F680-\U0001F6FF'    \
+    u'\U0001F900-\U0001F9FF'    \
+    u'\u2000-\u206F'            \
+    u'\u2300-\u27BF'            \
+    u'\u2900-\u297F'            \
+    u'\u2B00-\u2BFF'            \
+    u'\u3000-\u303F'            \
+    u'\u3200-\u32FF'            \
+    u'])'
+# The equivalent JS regex is \ud83c[\udd00-\udfff]|\ud83d[\udc00-\ude4f]|\ud83d[\ude80-\udeff]|
+# \ud83e[\udd00-\uddff]|[\u2000-\u206f]|[\u2300-\u27bf]|[\u2b00-\u2bff]|[\u3000-\u303f]|
+# [\u3200-\u32ff]. See below comments for explanation. The JS regex is used by marked.js for
+# frontend unicode emoji processing.
+# The JS regex \ud83c[\udd00-\udfff]|\ud83d[\udc00-\ude4f] represents U0001f100-\U0001f64f
+# The JS regex \ud83d[\ude80-\udeff] represents \U0001f680-\U0001f6ff
+# The JS regex \ud83e[\udd00-\uddff] represents \U0001f900-\U0001f9ff
+# The JS regex [\u2000-\u206f] represents \u2000-\u206f
+# The JS regex [\u2300-\u27bf] represents \u2300-\u27bf
+# Similarly other JS regexes can be mapped to the respective unicode blocks.
+# For more information, please refer to the following article:
+# http://crocodillon.com/blog/parsing-emoji-unicode-in-javascript
 
 def make_emoji(codepoint, display_string):
     # type: (Text, Text) -> Element
@@ -735,8 +784,9 @@ class UnicodeEmoji(markdown.inlinepatterns.Pattern):
         # type: (Match[Text]) -> Optional[Element]
         orig_syntax = match.group('syntax')
         codepoint = unicode_emoji_to_codepoint(orig_syntax)
-        if codepoint in unicode_emoji_list:
-            return make_emoji(codepoint, orig_syntax)
+        if codepoint in codepoint_to_name:
+            display_string = ':' + codepoint_to_name[codepoint] + ':'
+            return make_emoji(codepoint, display_string)
         else:
             return None
 
@@ -750,7 +800,7 @@ class Emoji(markdown.inlinepatterns.Pattern):
         if db_data is not None:
             realm_emoji = db_data['emoji']
 
-        if current_message and name in realm_emoji:
+        if current_message and name in realm_emoji and not realm_emoji[name]['deactivated']:
             return make_realm_emoji(realm_emoji[name]['source_url'], orig_syntax)
         elif name == 'zulip':
             return make_realm_emoji('/static/generated/emoji/images/emoji/unicode/zulip.png', orig_syntax)
@@ -793,7 +843,6 @@ class ModalLink(markdown.inlinepatterns.Pattern):
         a_tag = markdown.util.etree.Element("a")
         a_tag.set("href", relative_url)
         a_tag.set("title", relative_url)
-        a_tag.set("data-toggle", "modal")
         a_tag.text = text
 
         return a_tag
@@ -1042,8 +1091,6 @@ class UserMentionPattern(markdown.inlinepatterns.Pattern):
             return (True, None)
 
         user = db_data['full_names'].get(name.lower(), None)
-        if user is None:
-            user = db_data['short_names'].get(name.lower(), None)
 
         return (False, user)
 
@@ -1223,53 +1270,7 @@ class Bugdown(markdown.Extension):
         md.inlinePatterns.add('stream', StreamPattern(stream_group), '>backtick')
         md.inlinePatterns.add('tex', Tex(r'\B\$\$(?P<body>[^ _$](\\\$|[^$])*)(?! )\$\$\B'), '>backtick')
         md.inlinePatterns.add('emoji', Emoji(r'(?P<syntax>:[\w\-\+]+:)'), '_end')
-
-        # All of our emojis(non ZWJ sequences) belong to one of these unicode blocks:
-        # \U0001f100-\U0001f1ff - Enclosed Alphanumeric Supplement
-        # \U0001f200-\U0001f2ff - Enclosed Ideographic Supplement
-        # \U0001f300-\U0001f5ff - Miscellaneous Symbols and Pictographs
-        # \U0001f600-\U0001f64f - Emoticons (Emoji)
-        # \U0001f680-\U0001f6ff - Transport and Map Symbols
-        # \U0001f900-\U0001f9ff - Supplemental Symbols and Pictographs
-        # \u2000-\u206f         - General Punctuation
-        # \u2300-\u23ff         - Miscellaneous Technical
-        # \u2400-\u243f         - Control Pictures
-        # \u2440-\u245f         - Optical Character Recognition
-        # \u2460-\u24ff         - Enclosed Alphanumerics
-        # \u2500-\u257f         - Box Drawing
-        # \u2580-\u259f         - Block Elements
-        # \u25a0-\u25ff         - Geometric Shapes
-        # \u2600-\u26ff         - Miscellaneous Symbols
-        # \u2700-\u27bf         - Dingbats
-        # \u2900-\u297f         - Supplemental Arrows-B
-        # \u2b00-\u2bff         - Miscellaneous Symbols and Arrows
-        # \u3000-\u303f         - CJK Symbols and Punctuation
-        # \u3200-\u32ff         - Enclosed CJK Letters and Months
-        unicode_emoji_regex = u'(?P<syntax>['\
-            u'\U0001F100-\U0001F64F'    \
-            u'\U0001F680-\U0001F6FF'    \
-            u'\U0001F900-\U0001F9FF'    \
-            u'\u2000-\u206F'            \
-            u'\u2300-\u27BF'            \
-            u'\u2900-\u297F'            \
-            u'\u2B00-\u2BFF'            \
-            u'\u3000-\u303F'            \
-            u'\u3200-\u32FF'            \
-            u'])'
         md.inlinePatterns.add('unicodeemoji', UnicodeEmoji(unicode_emoji_regex), '_end')
-        # The equivalent JS regex is \ud83c[\udd00-\udfff]|\ud83d[\udc00-\ude4f]|\ud83d[\ude80-\udeff]|
-        # \ud83e[\udd00-\uddff]|[\u2000-\u206f]|[\u2300-\u27bf]|[\u2b00-\u2bff]|[\u3000-\u303f]|
-        # [\u3200-\u32ff]. See below comments for explanation. The JS regex is used by marked.js for
-        # frontend unicode emoji processing.
-        # The JS regex \ud83c[\udd00-\udfff]|\ud83d[\udc00-\ude4f] represents U0001f100-\U0001f64f
-        # The JS regex \ud83d[\ude80-\udeff] represents \U0001f680-\U0001f6ff
-        # The JS regex \ud83e[\udd00-\uddff] represents \U0001f900-\U0001f9ff
-        # The JS regex [\u2000-\u206f] represents \u2000-\u206f
-        # The JS regex [\u2300-\u27bf] represents \u2300-\u27bf
-        # Similarly other JS regexes can be mapped to the respective unicode blocks.
-        # For more information, please refer to the following article:
-        # http://crocodillon.com/blog/parsing-emoji-unicode-in-javascript
-
         md.inlinePatterns.add('link', AtomicLinkPattern(markdown.inlinepatterns.LINK_RE, md), '>avatar')
 
         for (pattern, format_string, id) in self.getConfig("realm_filters"):
@@ -1457,7 +1458,7 @@ def do_convert(content, message=None, message_realm=None, possible_words=None, s
     # * Nothing is passed in other than content -> just run default options (e.g. for docs)
     # * message is passed, but no realm is -> look up realm from message
     # * message_realm is passed -> use that realm for bugdown purposes
-    if message:
+    if message is not None:
         if message_realm is None:
             message_realm = message.get_realm()
     if message_realm is None:
@@ -1488,7 +1489,8 @@ def do_convert(content, message=None, message_realm=None, possible_words=None, s
 
     # Pre-fetch data from the DB that is used in the bugdown thread
     global db_data
-    if message:
+    if message is not None:
+        assert message_realm is not None # ensured above if message is not None
         realm_users = get_active_user_dicts_in_realm(message_realm)
         realm_streams = get_active_streams(message_realm).values('id', 'name')
 

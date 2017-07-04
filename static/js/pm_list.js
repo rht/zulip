@@ -143,7 +143,10 @@ exports.rebuild_recent = function (active_conversation) {
         private_li.append(private_messages_dom);
     }
     if (active_conversation) {
-        exports.get_conversation_li(active_conversation).addClass('active-sub-filter');
+        var active_li = exports.get_conversation_li(active_conversation);
+        if (active_li) {
+            active_li.addClass('active-sub-filter');
+        }
     }
 
     resize.resize_stream_filters_container();
@@ -207,6 +210,9 @@ exports.update_dom_with_unread_counts = function (counts) {
 };
 
 
+exports.initialize = function () {
+    pm_list.set_click_handlers();
+};
 
 return exports;
 }());

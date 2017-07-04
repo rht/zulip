@@ -3,9 +3,16 @@
         <p class="bot-settings-note padded-container">
             {{#tr this}}
             Looking for our <a href="/integrations" target="_blank">Integrations</a>
-            or <a href="{{ server_uri }}/api" target="_blank">API</a> documentation?
+            or <a href="__server_uri__/api" target="_blank">API</a> documentation?
             {{/tr}}
         </p>
+
+        <div>
+            <span>{{ t 'Download config of all active Outgoing webhook bots in Zulip Botserver format.' }}</span>
+            <a type="submit" download="{{flaskbotrc}}" id= "download_flaskbotrc" class="btn" title="{{t 'Download flaskbotrc' }}">
+                <i class="icon-vector-download-alt sea-green"></i>
+            </a>
+        </div>
 
         <ul class="nav nav-tabs nav-justified" id="bots_lists_navbar">
             <li class="active active-bots-tab"><a>{{t "Active bots" }}</a></li>
@@ -25,6 +32,18 @@
                 <h4 class="new-bot-section-title light no-margin">{{t "Add a new bot" }}</h4>
                 <div class="new-bot-form">
                     <div class="input-group">
+                        <label for="bot_type">
+                            {{t "Bot type" }}
+                            <i class="icon-vector-question-sign bot_type_tooltip" data-toggle="tooltip"
+                             title='{{t "Incoming webhooks can only send messages." }}'></i>
+                        </label>
+                        <select name="bot_type" id="create_bot_type">
+                            <option value="1">{{t "Generic bot" }}</option>
+                            <option value="2">{{t "Incoming webhook" }}</option>
+                            <option value="3">{{t "Outgoing webhook" }}</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
                         <label for="create_bot_name">{{t "Full name" }}</label>
                         <input type="text" name="bot_name" id="create_bot_name" class="required"
                                maxlength=100 placeholder="{{t 'Cookie Bot' }}" value="" />
@@ -39,63 +58,26 @@
                             <label for="create_bot_short_name" generated="true" class="text-error"></label>
                         </div>
                     </div>
+                    <div class="input-group" id="payload_url_inputbox">
+                        <label for="create_payload_url">{{t "Outgoing webhook service base URL" }}</label>
+                        <input type="text" name="payload_url" id="create_payload_url"
+                            maxlength=100 placeholder="https://hostname.example.com/bots/followup" value="" />
+                        <div><label for="create_payload_url" generated="true" class="text-error"></label></div>
+                    </div>
                     <div class="input-group">
                         <div id="bot_avatar_file"></div>
                         <input type="file" name="bot_avatar_file_input" class="notvisible" id="bot_avatar_file_input" value="{{t 'Upload avatar' }}" />
-                        <button class="button white rounded small btn-danger display-none" id="bot_avatar_clear_button">{{t "Clear avatar" }}</button>
-                        <button class="button white rounded" id="bot_avatar_upload_button">{{t "Customize avatar" }}</button> ({{t "Optional" }})
+                        <button class="button rounded small btn-danger display-none" id="bot_avatar_clear_button">{{t "Clear avatar" }}</button>
+                        <button class="button rounded" id="bot_avatar_upload_button">{{t "Customize avatar" }}</button> ({{t "Optional" }})
                     </div>
                     <p>
                         <div id="bot_avatar_file_input_error" class="text-error"></div>
                     </p>
-                    <button type="submit" class="button white rounded sea-green" id="create_bot_button">
+                    <button type="submit" class="button rounded sea-green" id="create_bot_button">
                         {{t 'Create bot' }}
                     </button>
                 </div>
             </form>
-        </div>
-
-        <hr class="settings_separator" />
-
-        <div class="form-horizontal" id="api_key_button_box">
-            <div class="input-group side-padded-container">
-                <p class="api-key-note">
-                    {{#tr this}}
-                    For most bots using the API, you'll want to give each bot
-                    its own name and API key using the above section.  But if you
-                    want to write a bot that can access your own private
-                    messages, you should use your personal API key.
-                    {{/tr}}
-                </p>
-                <button class="button white rounded" id="api_key_button">{{t "Show/change your API key" }}</button>
-            </div>
-        </div>
-        <div id="get_api_key_box" class="side-padded-container">
-            <p>{{t "Please re-enter your password to confirm your identity." }}
-              <a href="/accounts/password/reset/" target="_blank">{{t "Forgotten it?" }}</a></p>
-            <form action="/json/fetch_api_key" method="post" class="form-horizontal">
-                <div class="control-group">
-                    <label for="password" class="control-label">{{t "Current password" }}</label>
-                    <input type="password" autocomplete="off"
-                           name="password" id="get_api_key_password" value="" />
-                </div>
-                <div class="control-group">
-                    <input type="submit" name="view_api_key" value="{{t 'Get API key' }}"
-                           class="btn btn-primary" />
-                </div>
-            </form>
-        </div>
-        <div id="show_api_key_box" class="side-padded-container">
-            <p>{{t "Your API key:" }}</p>
-            <p><b><span id="api_key_value"></span></b></p>
-            <button type="submit" class="btn btn-primary regenerate_api_key">
-                {{t "Generate new API key" }}
-            </button>
-            <a id="download_zuliprc" download="{{zuliprc}}" class="btn btn-success">
-                {{t "Download .zuliprc" }}
-            </a>
-            <div id="user_api_key_error text-error">
-            </div>
         </div>
 
     </div>

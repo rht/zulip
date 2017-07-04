@@ -320,8 +320,20 @@ function start_edit_maintaining_scroll(row, content) {
     }
 }
 
+function start_edit_with_content(row, content, edit_box_open_callback) {
+    start_edit_maintaining_scroll(row, content);
+    if (edit_box_open_callback) {
+        edit_box_open_callback();
+    }
+}
+
 exports.start = function (row, edit_box_open_callback) {
     var message = current_msg_list.get(rows.id(row));
+    if (message.raw_content) {
+        start_edit_with_content(row, message.raw_content, edit_box_open_callback);
+        return;
+    }
+
     var msg_list = current_msg_list;
     channel.get({
         url: '/json/messages/' + message.id,
@@ -329,10 +341,7 @@ exports.start = function (row, edit_box_open_callback) {
         success: function (data) {
             if (current_msg_list === msg_list) {
                 message.raw_content = data.raw_content;
-                start_edit_maintaining_scroll(row, data.raw_content);
-                if (edit_box_open_callback) {
-                    edit_box_open_callback();
-                }
+                start_edit_with_content(row, message.raw_content, edit_box_open_callback);
             }
         },
     });
@@ -434,6 +443,7 @@ exports.show_history = function (message) {
         success: function (data) {
             // For now, we ignore topic edits
             var content_edit_history = [];
+            var prev_timestamp;
             _.each(data.message_history, function (msg, index) {
                 if (index !== 0 && !msg.prev_content) {
                     // Skip topic edits
@@ -441,13 +451,20 @@ exports.show_history = function (message) {
                 }
 
                 // Format timestamp nicely for display
-                var item = {timestamp: timerender.get_full_time(msg.timestamp)};
+                var timestamp = timerender.get_full_time(msg.timestamp);
+                var item = {
+                    timestamp: moment(timestamp).format("h:mm A"),
+                    display_date: moment(timestamp).format("MMMM D, YYYY"),
+                };
                 if (index === 0) {
                     item.posted_or_edited = "Posted by";
                     item.body_to_render = msg.rendered_content;
+                    prev_timestamp = timestamp;
+                    item.show_date_row = true;
                 } else {
                     item.posted_or_edited = "Edited by";
                     item.body_to_render = msg.content_html_diff;
+                    item.show_date_row = !moment(timestamp).isSame(prev_timestamp, 'day');
                 }
                 if (msg.user_id) {
                     var person = people.get_person_from_user_id(msg.user_id);
@@ -465,6 +482,26 @@ exports.show_history = function (message) {
             ui_report.error(i18n.t("Error fetching message edit history"), xhr,
                             $("#message-history-error"));
         },
+    });
+};
+
+exports.delete_message = function (msg_id) {
+    $("#delete-message-error").html('');
+    $('#delete_message_modal').modal("show");
+    $('#do_delete_message_button').off().on('click', function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        channel.del({
+            url: "/json/messages/" + msg_id,
+            success: function () {
+                $('#delete_message_modal').modal("hide");
+            },
+            error: function (xhr) {
+                ui_report.error(i18n.t("Error deleting message."), xhr,
+                    $("#delete-message-error"));
+            },
+        });
+
     });
 };
 

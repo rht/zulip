@@ -13,7 +13,13 @@ from zerver.models import UserProfile
 def get_device_browser(user_agent):
     # type: (str) -> Optional[str]
     user_agent = user_agent.lower()
-    if "chrome" in user_agent and "chromium" not in user_agent:
+    if "zulip" in user_agent:
+        return "Zulip"
+    elif "edge" in user_agent:
+        return "Edge"
+    elif "opera" in user_agent or "opr/" in user_agent:
+        return "Opera"
+    elif "chrome" in user_agent and "chromium" not in user_agent:
         return 'Chrome'
     elif "firefox" in user_agent and "seamonkey" not in user_agent and "chrome" not in user_agent:
         return "Firefox"
@@ -21,12 +27,8 @@ def get_device_browser(user_agent):
         return "Chromium"
     elif "safari" in user_agent and "chrome" not in user_agent and "chromium" not in user_agent:
         return "Safari"
-    elif "opera" in user_agent:
-        return "Opera"
     elif "msie" in user_agent or "trident" in user_agent:
         return "Internet Explorer"
-    elif "edge" in user_agent:
-        return "Edge"
     else:
         return None
 
@@ -82,7 +84,6 @@ def email_on_new_login(sender, user, request, **kwargs):
 
         context = common_context(user)
         context['device_info'] = device_info
-        context['zulip_support'] = settings.ZULIP_ADMINISTRATOR
         context['user'] = user
 
         send_email_to_user('zerver/emails/notify_new_login', user, context=context)

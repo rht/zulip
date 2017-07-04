@@ -81,8 +81,8 @@ i18n_urls = [
     url(r'^accounts/password/reset/$', password_reset,
         {'post_reset_redirect': '/accounts/password/reset/done/',
          'template_name': 'zerver/reset.html',
-         'email_template_name': 'zerver/emails/password_reset.txt',
-         'subject_template_name': 'zerver/emails/password_reset.subject',
+         'email_template_name': '',
+         'subject_template_name': '',
          'password_reset_form': zerver.forms.ZulipPasswordResetForm,
          }, name='django.contrib.auth.views.password_reset'),
     url(r'^accounts/password/reset/done/$', password_reset_done,
@@ -141,7 +141,7 @@ i18n_urls = [
     url(r'^api/endpoints/$', zerver.views.integrations.api_endpoint_docs, name='zerver.views.integrations.api_endpoint_docs'),
     url(r'^integrations/$', IntegrationView.as_view()),
     url(r'^about/$', TemplateView.as_view(template_name='zerver/about.html')),
-    url(r'^apps/$', TemplateView.as_view(template_name='zerver/apps.html')),
+    url(r'^apps/$', zerver.views.home.apps_view, name='zerver.views.home.apps_view'),
 
     url(r'^robots\.txt$', RedirectView.as_view(url='/static/robots.txt', permanent=True)),
 
@@ -149,6 +149,7 @@ i18n_urls = [
     url(r'^hello/$', TemplateView.as_view(template_name='zerver/hello.html'), name='landing-page'),
     url(r'^new-user/$', RedirectView.as_view(url='/hello', permanent=True)),
     url(r'^features/$', TemplateView.as_view(template_name='zerver/features.html')),
+    url(r'^for/open-source/$', TemplateView.as_view(template_name='zerver/for-open-source.html')),
     url(r'^find_my_team/$', zerver.views.registration.find_my_team, name='zerver.views.registration.find_my_team'),
     url(r'^authors/$', zerver.views.users.authors_view, name='zerver.views.users.authors_view'),
 
@@ -247,7 +248,8 @@ v1_api_and_json_patterns = [
          'POST': 'zerver.views.messages.send_message_backend'}),
     url(r'^messages/(?P<message_id>[0-9]+)$', rest_dispatch,
         {'GET': 'zerver.views.messages.json_fetch_raw_message',
-         'PATCH': 'zerver.views.messages.update_message_backend'}),
+         'PATCH': 'zerver.views.messages.update_message_backend',
+         'DELETE': 'zerver.views.messages.delete_message_backend'}),
     url(r'^messages/render$', rest_dispatch,
         {'POST': 'zerver.views.messages.render_message_backend'}),
     url(r'^messages/flags$', rest_dispatch,

@@ -4,7 +4,7 @@ var bot_data = (function () {
     var bots = {};
     var bot_fields = ['api_key', 'avatar_url', 'default_all_public_streams',
                       'default_events_register_stream', 'default_sending_stream',
-                      'email', 'full_name', 'is_active', 'owner'];
+                      'email', 'full_name', 'is_active', 'owner', 'bot_type'];
 
     var send_change_event = _.debounce(function () {
         $(document).trigger('zulip.bot_data_changed');
@@ -55,11 +55,11 @@ var bot_data = (function () {
         return bots[email];
     };
 
-    $(function init() {
+    exports.initialize = function () {
         _.each(page_params.realm_bots, function (bot) {
             exports.add(bot);
         });
-    });
+    };
 
     return exports;
 }());

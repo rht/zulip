@@ -32,8 +32,9 @@ class Integration(object):
     DEFAULT_LOGO_STATIC_PATH_PNG = 'static/images/integrations/logos/{name}.png'
     DEFAULT_LOGO_STATIC_PATH_SVG = 'static/images/integrations/logos/{name}.svg'
 
-    def __init__(self, name, client_name, logo=None, secondary_line_text=None, display_name=None, doc=None):
-        # type: (str, str, Optional[str], Optional[str], Optional[str], Optional[str]) -> None
+    def __init__(self, name, client_name, logo=None, secondary_line_text=None,
+                 display_name=None, doc=None, stream_name=None):
+        # type: (str, str, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]) -> None
         self.name = name
         self.client_name = client_name
         self.secondary_line_text = secondary_line_text
@@ -51,6 +52,10 @@ class Integration(object):
             display_name = name.title()
         self.display_name = display_name
 
+        if stream_name is None:
+            stream_name = self.name
+        self.stream_name = stream_name
+
     def is_enabled(self):
         # type: () -> bool
         return True
@@ -63,12 +68,7 @@ class Integration(object):
     def help_content(self):
         # type: () -> Text
         doc_context = self.doc_context or {}
-
-        if self.doc.endswith('.md'):
-            return render_markdown_path(self.doc, doc_context)
-        else:
-            template = loader.get_template(self.doc)
-            return mark_safe(template.render(doc_context))
+        return render_markdown_path(self.doc, doc_context)
 
 class EmailIntegration(Integration):
     def is_enabled(self):
@@ -82,11 +82,18 @@ class WebhookIntegration(Integration):
     DEFAULT_DOC_PATH = '{name}/doc.{ext}'
 
     def __init__(self, name, client_name=None, logo=None, secondary_line_text=None,
-                 function=None, url=None, display_name=None, doc=None):
-        # type: (str, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]) -> None
+                 function=None, url=None, display_name=None, doc=None, stream_name=None):
+        # type: (str, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]) -> None
         if client_name is None:
             client_name = self.DEFAULT_CLIENT_NAME.format(name=name.title())
-        super(WebhookIntegration, self).__init__(name, client_name, logo, secondary_line_text, display_name)
+        super(WebhookIntegration, self).__init__(
+            name,
+            client_name,
+            logo=logo,
+            secondary_line_text=secondary_line_text,
+            display_name=display_name,
+            stream_name=stream_name
+        )
 
         if function is None:
             function = self.DEFAULT_FUNCTION_PATH.format(name=name)
@@ -101,12 +108,7 @@ class WebhookIntegration(Integration):
         self.url = url
 
         if doc is None:
-            path = os.path.join(settings.DEPLOY_ROOT, 'zerver', 'webhooks')
-            md_doc = self.DEFAULT_DOC_PATH.format(name=name, ext='md')
-            if os.path.exists(os.path.join(path, md_doc)):
-                doc = md_doc
-            else:
-                doc = self.DEFAULT_DOC_PATH.format(name=name, ext='html')
+            doc = self.DEFAULT_DOC_PATH.format(name=name, ext='md')
 
         self.doc = doc
 
@@ -127,13 +129,33 @@ class HubotLozenge(Integration):
         if git_url is None:
             git_url = self.GIT_URL_TEMPLATE.format(name)
         self.git_url = git_url
-        super(HubotLozenge, self).__init__(name, name, logo, display_name=display_name)
+        super(HubotLozenge, self).__init__(
+            name, name,
+            logo=logo, display_name=display_name
+        )
 
 class GithubIntegration(WebhookIntegration):
     """
     We need this class to don't creating url object for git integrations.
     We want to have one generic url with dispatch function for github service and github webhook.
     """
+    def __init__(self, name, client_name=None, logo=None, secondary_line_text=None,
+                 function=None, url=None, display_name=None, doc=None, stream_name=None):
+        # type: (str, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]) -> None
+        url = self.DEFAULT_URL.format(name='github')
+
+        super(GithubIntegration, self).__init__(
+            name,
+            client_name=client_name,
+            logo=logo,
+            secondary_line_text=secondary_line_text,
+            function=function,
+            url=url,
+            display_name=display_name,
+            doc=doc,
+            stream_name=stream_name
+        )
+
     @property
     def url_object(self):
         # type: () -> None
@@ -144,26 +166,43 @@ WEBHOOK_INTEGRATIONS = [
     WebhookIntegration('appfollow', display_name='AppFollow'),
     WebhookIntegration('beanstalk'),
     WebhookIntegration('basecamp'),
-    WebhookIntegration('bitbucket2', logo='static/images/integrations/logos/bitbucket.svg', display_name='Bitbucket'),
-    WebhookIntegration('bitbucket', display_name='Bitbucket', secondary_line_text='(Enterprise)'),
+    WebhookIntegration(
+        'bitbucket2',
+        logo='static/images/integrations/logos/bitbucket.svg',
+        display_name='Bitbucket',
+        stream_name='bitbucket'
+    ),
+    WebhookIntegration(
+        'bitbucket',
+        display_name='Bitbucket',
+        secondary_line_text='(Enterprise)',
+        stream_name='commits'
+    ),
     WebhookIntegration('circleci', display_name='CircleCI'),
     WebhookIntegration('codeship'),
     WebhookIntegration('crashlytics'),
     WebhookIntegration('delighted', display_name='Delighted'),
-    WebhookIntegration('deskdotcom', logo='static/images/integrations/logos/deskcom.png', display_name='Desk.com'),
+    WebhookIntegration(
+        'deskdotcom',
+        logo='static/images/integrations/logos/deskcom.png',
+        display_name='Desk.com',
+        stream_name='desk'
+    ),
     WebhookIntegration('freshdesk'),
     GithubIntegration(
         'github',
         function='zerver.webhooks.github.view.api_github_landing',
         display_name='GitHub',
-        secondary_line_text='(deprecated)'
+        secondary_line_text='(deprecated)',
+        stream_name='commits'
     ),
     GithubIntegration(
         'github_webhook',
         display_name='GitHub',
         logo='static/images/integrations/logos/github.svg',
         secondary_line_text='(webhook)',
-        function='zerver.webhooks.github_webhook.view.api_github_webhook'
+        function='zerver.webhooks.github_webhook.view.api_github_webhook',
+        stream_name='github'
     ),
     WebhookIntegration('gitlab', display_name='GitLab'),
     WebhookIntegration('gogs'),
@@ -182,7 +221,7 @@ WEBHOOK_INTEGRATIONS = [
     WebhookIntegration('papertrail'),
     WebhookIntegration('pingdom'),
     WebhookIntegration('pivotal', display_name='Pivotal Tracker'),
-    WebhookIntegration('semaphore'),
+    WebhookIntegration('semaphore', stream_name='builds'),
     WebhookIntegration('sentry'),
     WebhookIntegration('slack'),
     WebhookIntegration('solano', display_name='Solano Labs'),
@@ -205,23 +244,27 @@ WEBHOOK_INTEGRATIONS = [
 ]  # type: List[WebhookIntegration]
 
 INTEGRATIONS = {
-    'asana': Integration('asana', 'asana', doc='zerver/integrations/asana.html'),
-    'capistrano': Integration('capistrano', 'capistrano', doc='zerver/integrations/capistrano.html'),
-    'codebase': Integration('codebase', 'codebase', doc='zerver/integrations/codebase.html'),
-    'email': EmailIntegration('email', 'email', doc='zerver/integrations/email.html'),
-    'git': Integration('git', 'git', doc='zerver/integrations/git.html'),
+    'asana': Integration('asana', 'asana', doc='zerver/integrations/asana.md'),
+    'capistrano': Integration('capistrano', 'capistrano', display_name='Capistrano', doc='zerver/integrations/capistrano.md'),
+    'codebase': Integration('codebase', 'codebase', doc='zerver/integrations/codebase.md'),
+    'email': EmailIntegration('email', 'email', doc='zerver/integrations/email.md'),
+    'git': Integration(
+        'git', 'git',
+        doc='zerver/integrations/git.md',
+        stream_name='commits',
+    ),
     'google-calendar': Integration(
         'google-calendar',
         'google-calendar',
         display_name='Google Calendar',
-        doc='zerver/integrations/google-calendar.html'
+        doc='zerver/integrations/google-calendar.md'
     ),
-    'hubot': Integration('hubot', 'hubot', doc='zerver/integrations/hubot.html'),
+    'hubot': Integration('hubot', 'hubot', doc='zerver/integrations/hubot.md'),
     'jenkins': Integration(
         'jenkins',
         'jenkins',
         secondary_line_text='(or Hudson)',
-        doc='zerver/integrations/jenkins.html'
+        doc='zerver/integrations/jenkins.md'
     ),
     'jira-plugin': Integration(
         'jira-plugin',
@@ -229,37 +272,46 @@ INTEGRATIONS = {
         logo='static/images/integrations/logos/jira.svg',
         secondary_line_text='(locally installed)',
         display_name='JIRA',
-        doc='zerver/integrations/jira-plugin.html'
+        doc='zerver/integrations/jira-plugin.md',
+        stream_name='jira',
     ),
     'mercurial': Integration(
         'mercurial',
         'mercurial',
         display_name='Mercurial (hg)',
-        doc='zerver/integrations/mercurial.html'
+        doc='zerver/integrations/mercurial.md',
+        stream_name='commits',
     ),
-    'nagios': Integration('nagios', 'nagios', doc='zerver/integrations/nagios.html'),
+    'nagios': Integration('nagios', 'nagios', doc='zerver/integrations/nagios.md'),
     'openshift': Integration(
         'openshift',
         'openshift',
         display_name='OpenShift',
-        doc='zerver/integrations/openshift.html'
+        doc='zerver/integrations/openshift.md',
+        stream_name='deployments',
     ),
-    'perforce': Integration('perforce', 'perforce', doc='zerver/integrations/perforce.html'),
-    'phabricator': Integration('phabricator', 'phabricator', doc='zerver/integrations/phabricator.html'),
-    'puppet': Integration('puppet', 'puppet', doc='zerver/integrations/puppet.html'),
-    'redmine': Integration('redmine', 'redmine', doc='zerver/integrations/redmine.html'),
-    'rss': Integration('rss', 'rss', display_name='RSS', doc='zerver/integrations/rss.html'),
-    'subversion': Integration('subversion', 'subversion', doc='zerver/integrations/subversion.html'),
-    'trac': Integration('trac', 'trac', doc='zerver/integrations/trac.html'),
+    'perforce': Integration('perforce', 'perforce', doc='zerver/integrations/perforce.md'),
+    'phabricator': Integration('phabricator', 'phabricator', doc='zerver/integrations/phabricator.md'),
+    'puppet': Integration('puppet', 'puppet', doc='zerver/integrations/puppet.md'),
+    'redmine': Integration('redmine', 'redmine', doc='zerver/integrations/redmine.md'),
+    'rss': Integration('rss', 'rss', display_name='RSS', doc='zerver/integrations/rss.md'),
+    'svn': Integration(
+        'svn', 'svn',
+        display_name='Subversion',
+        doc='zerver/integrations/svn.md',
+        stream_name='commits',
+    ),
+    'trac': Integration('trac', 'trac', doc='zerver/integrations/trac.md'),
     'trello-plugin': Integration(
         'trello-plugin',
         'trello-plugin',
         logo='static/images/integrations/logos/trello.svg',
         secondary_line_text='(legacy)',
         display_name='Trello',
-        doc='zerver/integrations/trello-plugin.html'
+        doc='zerver/integrations/trello-plugin.md',
+        stream_name='trello',
     ),
-    'twitter': Integration('twitter', 'twitter', doc='zerver/integrations/twitter.html'),
+    'twitter': Integration('twitter', 'twitter', doc='zerver/integrations/twitter.md'),
 
 }  # type: Dict[str, Integration]
 

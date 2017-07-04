@@ -72,15 +72,41 @@ except ValueError:
 metadata = git_p4.p4_describe(changelist)  # type: Dict[str, str]
 
 destination = config.commit_notice_destination(changeroot, changelist)  # type: Optional[Dict[str, str]]
+
 if destination is None:
     # Don't forward the notice anywhere
     sys.exit(0)
 
-message = "**{0}** committed revision @{1} to `{2}`.\n\n> {3}".format(
-    metadata["user"],
-    metadata["change"],
-    changeroot,
-    metadata["desc"])  # type: str
+ignore_missing_stream = None
+if hasattr(config, "ZULIP_IGNORE_MISSING_STREAM"):
+    ignore_missing_stream = config.ZULIP_IGNORE_MISSING_STREAM
+
+if ignore_missing_stream:
+    # Check if the destination stream exists yet
+    stream_state = client.get_stream_id(destination["stream"])
+    if stream_state["result"] == "error":
+        # Silently discard the message
+        sys.exit(0)
+
+change = metadata["change"]
+p4web = None
+if hasattr(config, "P4_WEB"):
+    p4web = config.P4_WEB
+
+if p4web is not None:
+    # linkify the change number
+    change = '[{change}]({p4web}/{change}?ac=10)'.format(p4web=p4web, change=change)
+
+message = """**{user}** committed revision @{change} to `{path}`.
+
+```quote
+{desc}
+```
+""".format(
+    user=metadata["user"],
+    change=change,
+    path=changeroot,
+    desc=metadata["desc"])  # type: str
 
 message_data = {
     "type": "stream",

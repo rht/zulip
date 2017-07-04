@@ -19,7 +19,7 @@ import mock
 import ujson
 
 from six.moves import range
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 class TestStatsEndpoint(ZulipTestCase):
     def test_stats(self):
@@ -47,7 +47,7 @@ class TestGetChartData(ZulipTestCase):
         return [0, 0, i, 0]
 
     def insert_data(self, stat, realm_subgroups, user_subgroups):
-        # type: (CountStat, List[str], List[str]) -> None
+        # type: (CountStat, List[Optional[str]], List[str]) -> None
         if stat.frequency == CountStat.HOUR:
             insert_time = self.end_times_hour[2]
             fill_time = self.end_times_hour[-1]
@@ -262,7 +262,7 @@ class TestGetChartDataHelpers(ZulipTestCase):
 
     def test_sort_by_totals(self):
         # type: () -> None
-        empty = [] # type: List[int]
+        empty = []  # type: List[int]
         value_arrays = {'c': [0, 1], 'a': [9], 'b': [1, 1, 1], 'd': empty}
         self.assertEqual(sort_by_totals(value_arrays), ['a', 'b', 'c', 'd'])
 
@@ -277,7 +277,7 @@ class TestTimeRange(ZulipTestCase):
         # type: () -> None
         HOUR = timedelta(hours=1)
         DAY = timedelta(days=1)
-        TZINFO = get_fixed_timezone(-100) # 100 minutes west of UTC
+        TZINFO = get_fixed_timezone(-100)  # 100 minutes west of UTC
 
         # Using 22:59 so that converting to UTC and applying floor_to_{hour,day} do not commute
         a_time = datetime(2016, 3, 14, 22, 59).replace(tzinfo=TZINFO)

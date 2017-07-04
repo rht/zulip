@@ -36,15 +36,6 @@ def generate_key():
     # type: () -> Text
     return generate_random_token(40)
 
-def generate_activation_url(key, host=None):
-    # type: (Text, Optional[str]) -> Text
-    if host is None:
-        host = settings.EXTERNAL_HOST
-    return u'%s%s%s' % (settings.EXTERNAL_URI_SCHEME,
-                        host,
-                        reverse('confirmation.views.confirm',
-                                kwargs={'confirmation_key': key}))
-
 def generate_realm_creation_url():
     # type: () -> Text
     key = generate_key()
@@ -55,7 +46,6 @@ def generate_realm_creation_url():
                                 kwargs={'creation_key': key}))
 
 class ConfirmationManager(models.Manager):
-
     def confirm(self, confirmation_key):
         # type: (str) -> Union[bool, PreregistrationUser, EmailChangeStatus]
         if B16_RE.search(confirmation_key):
@@ -84,31 +74,16 @@ class ConfirmationManager(models.Manager):
 
     def get_activation_url(self, confirmation_key, host=None):
         # type: (Text, Optional[str]) -> Text
-        return generate_activation_url(confirmation_key, host=host)
+        if host is None:
+            host = settings.EXTERNAL_HOST
+        return u'%s%s%s' % (settings.EXTERNAL_URI_SCHEME,
+                            host,
+                            reverse('confirmation.views.confirm',
+                                    kwargs={'confirmation_key': confirmation_key}))
 
     def get_link_validity_in_days(self):
         # type: () -> int
         return getattr(settings, 'EMAIL_CONFIRMATION_DAYS', 10)
-
-    def send_confirmation(self, obj, template_prefix, to_email, additional_context=None,
-                          host=None, custom_body=None):
-        # type: (ContentType, str, Text, Optional[Dict[str, Any]], Optional[str], Optional[str]) -> Confirmation
-        confirmation_key = generate_key()
-        current_site = Site.objects.get_current()
-        activate_url = self.get_activation_url(confirmation_key, host=host)
-        context = {
-            'activate_url': activate_url,
-            'current_site': current_site,
-            'confirmation_key': confirmation_key,
-            'target': obj,
-            'days': getattr(settings, 'EMAIL_CONFIRMATION_DAYS', 10),
-            'custom_body': custom_body,
-        }
-        if additional_context is not None:
-            context.update(additional_context)
-
-        send_email(template_prefix, to_email, from_email=settings.DEFAULT_FROM_EMAIL, context=context)
-        return self.create(content_object=obj, date_sent=timezone_now(), confirmation_key=confirmation_key)
 
 class EmailChangeConfirmationManager(ConfirmationManager):
     def get_activation_url(self, key, host=None):

@@ -35,8 +35,11 @@ EXTERNAL_HOST = 'zulip.example.com'
 # Note that these should just be hostnames, without port numbers.
 ALLOWED_HOSTS = [EXTERNAL_HOST.split(":")[0]]
 
-# The email address for the person or team who maintain the Zulip
-# Voyager installation. Will also get support emails. (e.g. zulip-admin@example.com)
+# The email address for the person or team who maintains the Zulip
+# installation. Note that this is a public-facing email address; it may
+# appear on 404 pages, is used as the sender's address for many automated
+# emails, and is advertised as a support address. An email address like
+# support@example.com is totally reasonable, as is admin@example.com.
 ZULIP_ADMINISTRATOR = 'zulip-admin@example.com'
 
 # Configure the outgoing SMTP server below. You will need working
@@ -71,11 +74,13 @@ EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_HOST_USER = ''
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-# The email From address to be used for automatically generated emails
-DEFAULT_FROM_EMAIL = "Zulip <zulip@example.com>"
-# The noreply address to be used as Reply-To for certain generated emails.
-# Messages sent to this address should not be delivered anywhere.
-NOREPLY_EMAIL_ADDRESS = "Zulip <noreply@example.com>"
+# The noreply address to be used as the sender for certain generated emails.
+# Messages sent to this address could contain sensitive user data and should
+# not be delivered anywhere. (e.g. "Zulip <noreply@example.com>")
+NOREPLY_EMAIL_ADDRESS = "Zulip <noreply@" + EXTERNAL_HOST.split(":")[0] + ">"
+
+
+## OPTIONAL SETTINGS
 
 
 ### AUTHENTICATION SETTINGS
@@ -84,7 +89,7 @@ NOREPLY_EMAIL_ADDRESS = "Zulip <noreply@example.com>"
 # See http://zulip.readthedocs.io/en/latest/prod-authentication-methods.html
 # for documentation on our authentication backends.
 AUTHENTICATION_BACKENDS = (
-    # 'zproject.backends.EmailAuthBackend', # Email and password; just requires SMTP setup
+    'zproject.backends.EmailAuthBackend', # Email and password; just requires SMTP setup
     # 'zproject.backends.GoogleMobileOauth2Backend', # Google Apps, setup below
     # 'zproject.backends.GitHubAuthBackend', # GitHub auth, setup below
     # 'zproject.backends.ZulipLDAPAuthBackend', # LDAP, setup below
@@ -132,8 +137,6 @@ AUTHENTICATION_BACKENDS = (
 # SSO_APPEND_DOMAIN = "example.com")
 SSO_APPEND_DOMAIN = None # type: Optional[str]
 
-
-### OPTIONAL SETTINGS
 
 # Support for mobile push notifications.  Setting controls whether
 # push notifications will be forwarded through a Zulip push

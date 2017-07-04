@@ -11,6 +11,7 @@ all related services will run.
 
 Contents:
 * [Requirements](#requirements)
+* [Step 0: Set up Git & GitHub](#step-0-set-up-git-github)
 * [Step 1: Install Prerequisites](#step-1-install-prerequisites)
 * [Step 2: Get Zulip code](#step-2-get-zulip-code)
 * [Step 3: Start the development environment](#step-3-start-the-development-environment)
@@ -44,7 +45,7 @@ connection throughout the entire installation processes. (See [Specifying a
 proxy](#specifying-a-proxy) if you need a proxy to access the internet.)
 
 
-- **All**: 2GB available RAM, Active broadband internet connection.
+- **All**: 2GB available RAM, Active broadband internet connection, [GitHub account][set-up-git].
 - **macOS**: macOS (10.11 El Capitan or 10.12 Sierra recommended), Git,
   [VirtualBox][vbox-dl], [Vagrant][vagrant-dl-macos].
 - **Ubuntu**: 14.04 64-bit or 16.04 64-bit, Git, [Vagrant][vagrant-dl-deb], lxc.
@@ -56,6 +57,17 @@ proxy](#specifying-a-proxy) if you need a proxy to access the internet.)
 
 Don't see your system listed above? See [Advanced setup][install-advanced] for
 details about installing for other Linux and UNIX platforms.
+
+### Step 0: Set up Git & GitHub
+
+You can skip this step if you already have Git, GitHub, and SSH access
+to GitHub working on your machine.
+
+Follow our [Git Guide][set-up-git] in order to install Git, set up a
+GitHub account, create an SSH key to access code on GitHub
+efficiently, etc.  Be sure to create an ssh key and add it to your
+GitHub account using
+[these instructions](https://help.github.com/articles/generating-an-ssh-key/).
 
 ### Step 1: Install Prerequisites
 
@@ -190,10 +202,17 @@ sudo apt-get install build-essential git ruby lxc redir
 If you do, make sure to **install default required packages** along with
 **git**, **curl**, **openssh**, and **rsync** binaries.)
 
-After installing, you must run **Git BASH as an administrator**.
-
 Also, you must have hardware virtualization enabled (VT-X or AMD-V) in your
 computer's BIOS.
+
+#### Running Git BASH as an administrator
+
+It is important that you **always run Git BASH with administrator
+privileges** when working on Zulip code, as not doing so will cause
+errors in the development environment (such as symlink creation). You
+might wish to configure your Git BASH shortcut to always run with
+these privileges enabled (see this [guide][bash-admin-setup] for how
+to set this up).
 
 ##### Enable native symlinks
 
@@ -243,10 +262,6 @@ winsymlinks:native
 Now you are ready for [Step 2: Get Zulip Code.](#step-2-get-zulip-code)
 
 ### Step 2: Get Zulip Code
-
-If you haven't already created an ssh key and added it to your GitHub account,
-you should do that now by following [these
-instructions](https://help.github.com/articles/generating-an-ssh-key/).
 
 1. In your browser, visit <https://github.com/zulip/zulip>
    and click the `fork` button. You will need to be logged in to GitHub to
@@ -675,6 +690,31 @@ $ cp /usr/bin/curl.exe /cygdrive/c/HashiCorp/Vagrant/embedded/bin/
 Now re-run `vagrant up` and vagrant should be able to fetch the required
 box file.
 
+#### Vagrant was unable to mount VirtualBox shared folders
+
+For the following error:
+```
+Vagrant was unable to mount VirtualBox shared folders. This is usually
+because the filesystem "vboxsf" is not available. This filesystem is
+made available via the VirtualBox Guest Additions and kernel
+module. Please verify that these guest additions are properly
+installed in the guest. This is not a bug in Vagrant and is usually
+caused by a faulty Vagrant box. For context, the command attempted
+was:
+
+ mount -t vboxsf -o uid=1000,gid=1000 keys /keys
+```
+
+If this error starts happening unexpectedly, then just run:
+
+```
+vagrant reload
+```
+
+This is equivalent of running a halt followed by an up (aka rebooting
+the guest).  After this, you can do `vagrant provision` and `vagrant
+ssh`.
+
 #### os.symlink error
 
 If you receive the following error while running `vagrant up`:
@@ -971,3 +1011,5 @@ for the IP address that means any IP address can connect to your development ser
 [rtd-using-dev-env]: using-dev-environment.html
 [rtd-dev-remote]: dev-remote.html
 [git-bash]: https://git-for-windows.github.io/
+[bash-admin-setup]: https://superuser.com/questions/1002262/run-applications-as-administrator-by-default-in-windows-10
+[set-up-git]: git-guide.html#set-up-git

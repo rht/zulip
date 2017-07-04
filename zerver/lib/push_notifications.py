@@ -9,7 +9,7 @@ from zerver.models import PushDeviceToken, Message, Recipient, UserProfile, \
     UserMessage, get_display_recipient, receives_offline_notifications, \
     receives_online_notifications
 from zerver.models import get_user_profile_by_id
-from zerver.lib.avatar import avatar_url
+from zerver.lib.avatar import absolute_avatar_url
 from zerver.lib.request import JsonableError
 from zerver.lib.timestamp import datetime_to_timestamp, timestamp_to_datetime
 from zerver.decorator import statsd_increment
@@ -107,7 +107,7 @@ def response_listener(error_response):
     errmsg = ERROR_CODES[code]
     data = redis_client.hgetall(key)
     token = data['token']
-    user = get_user_profile_by_id(int(data['user_id']))
+    user_id = int(data['user_id'])
     b64_token = hex_to_b64(token)
 
     logging.warn("APNS: Failed to deliver APNS notification to %s, reason: %s" % (b64_token, errmsg))
@@ -115,7 +115,7 @@ def response_listener(error_response):
         # Invalid Token, remove from our database
         logging.warn("APNS: Removing token from database due to above failure")
         try:
-            PushDeviceToken.objects.get(user=user, token=b64_token).delete()
+            PushDeviceToken.objects.get(user_id=user_id, token=b64_token).delete()
             return  # No need to check RemotePushDeviceToken
         except PushDeviceToken.DoesNotExist:
             pass
@@ -124,7 +124,7 @@ def response_listener(error_response):
             # Trying to delete from both models is a bit inefficient than
             # deleting from only one model but this method is very simple.
             try:
-                RemotePushDeviceToken.objects.get(user_id=user.id,
+                RemotePushDeviceToken.objects.get(user_id=user_id,
                                                   token=b64_token).delete()
             except RemotePushDeviceToken.DoesNotExist:
                 pass
@@ -325,13 +325,13 @@ def get_gcm_payload(user_profile, message):
         'user': user_profile.email,
         'event': 'message',
         'alert': get_alert_from_message(message),
-        'zulip_message_id': message.id, # message_id is reserved for CCS
+        'zulip_message_id': message.id,  # message_id is reserved for CCS
         'time': datetime_to_timestamp(message.pub_date),
         'content': content,
         'content_truncated': content_truncated,
         'sender_email': message.sender.email,
         'sender_full_name': message.sender.full_name,
-        'sender_avatar_url': avatar_url(message.sender),
+        'sender_avatar_url': absolute_avatar_url(message.sender),
     }
 
     if message.recipient.type == Recipient.STREAM:

@@ -449,18 +449,20 @@ exports.change_state = (function () {
 
 exports.launch = function (hash) {
     exports.setup_page(function () {
-        modals.open_overlay({
+        overlays.open_overlay({
             name: 'subscriptions',
             overlay: $("#subscription_overlay"),
             on_close: exports.close,
         });
-
         exports.change_state(hash);
     });
+    if (!get_active_data().id) {
+        $('#search_stream_name').focus();
+    }
 };
 
 exports.close = function () {
-    hashchange.exit_modal();
+    hashchange.exit_overlay();
     subs.remove_miscategorized_streams();
 };
 
@@ -472,19 +474,24 @@ exports.switch_rows = function (event) {
         return false;
     } else if (!active_data.id || active_data.row.hasClass('notdisplayed')) {
         switch_row = $('div.stream-row:not(.notdisplayed):first');
-    } else if (event === 'up_arrow') {
-        switch_row = active_data.row.prev();
-    } else if (event === 'down_arrow') {
-        switch_row = active_data.row.next();
         if ($('#search_stream_name').is(":focus")) {
-            // When going from the filter box, go the first row.
             $('#search_stream_name').blur();
-            switch_row = $('div.stream-row:not(.notdisplayed):first');
+        }
+    } else {
+        if (event === 'up_arrow') {
+            switch_row = active_data.row.prevAll().not('.notdisplayed').first();
+        } else if (event === 'down_arrow') {
+            switch_row = active_data.row.nextAll().not('.notdisplayed').first();
+        }
+        if ($('#search_stream_name').is(":focus")) {
+            // remove focus from Filter streams input instead of switching rows
+            // if Filter streams input is focused
+            return $('#search_stream_name').blur();
         }
     }
 
     var row_data = get_row_data(switch_row);
-    if (row_data && !switch_row.hasClass('notdisplayed')) {
+    if (row_data) {
         var switch_row_name = row_data.object.name;
         var hash = ['#streams', row_data.id, switch_row_name];
         export_hash(hash);
@@ -534,7 +541,7 @@ function ajaxSubscribe(stream) {
         url: "/json/users/me/subscriptions",
         data: {subscriptions: JSON.stringify([{name: stream}]) },
         success: function (resp, statusText, xhr) {
-            if (modals.streams_open()) {
+            if (overlays.streams_open()) {
                 $("#create_stream_name").val("");
 
                 actually_filter_streams();
@@ -652,7 +659,7 @@ $(function () {
         $(".subscriptions-header").addClass("slide-left");
     });
 
-    $("#subscriptions_table").on("click", ".icon-vector-chevron-left", function () {
+    $("#subscriptions_table").on("click", ".fa-chevron-left", function () {
         $(".right").removeClass("show");
         $(".subscriptions-header").removeClass("slide-left");
     });

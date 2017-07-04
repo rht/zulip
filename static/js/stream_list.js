@@ -4,7 +4,12 @@ var exports = {};
 
 var zoomed_stream = '';
 
-function update_count_in_dom(unread_count_elem, count) {
+exports.get_global_filter_li = function (filter_name) {
+    var selector = "#global_filters li[data-name='" + filter_name + "']";
+    return $(selector);
+};
+
+exports.update_count_in_dom = function (unread_count_elem, count) {
     var count_span = unread_count_elem.find('.count');
     var value_span = count_span.find('.value');
 
@@ -23,7 +28,8 @@ function update_count_in_dom(unread_count_elem, count) {
         count_span.parent(".subscription_block").addClass("stream-with-count");
     }
     value_span.text(count);
-}
+};
+
 
 exports.stream_sidebar = (function () {
     var self = {};
@@ -121,23 +127,30 @@ exports.build_stream_list = function () {
 
     _.each(stream_groups.dormant_streams, add_sidebar_li);
 
-    $(elems).appendTo(parent);
+    parent.append(elems);
 };
 
-function iterate_to_find(selector, name_to_find, context) {
-    var lowercase_name = name_to_find.toLowerCase();
-    var found = _.find($(selector, context), function (elem) {
-        return $(elem).attr('data-name').toLowerCase() === lowercase_name;
-    });
-    return found ? $(found) : $();
-}
-
-function get_filter_li(type, name) {
-    return iterate_to_find("#" + type + "_filters > li", name);
-}
-
 exports.get_stream_li = function (stream_id) {
-    return $("#stream_sidebar_" + stream_id);
+    var row = exports.stream_sidebar.get_row(stream_id);
+    if (!row) {
+        // Not all streams are in the sidebar, so we don't report
+        // an error here, and it's up for the caller to error if
+        // they expected otherwise.
+        return;
+    }
+
+    var li = row.get_li();
+    if (!li) {
+        blueslip.error('Cannot find li for id ' + stream_id);
+        return;
+    }
+
+    if (li.length > 1) {
+        blueslip.error('stream_li has too many elements for ' + stream_id);
+        return;
+    }
+
+    return li;
 };
 
 function zoom_in() {
@@ -191,6 +204,11 @@ function reset_to_unnarrowed(narrowed_within_same_stream) {
 
 exports.set_in_home_view = function (stream_id, in_home) {
     var li = exports.get_stream_li(stream_id);
+    if (!li) {
+        blueslip.error('passed in bad stream id ' + stream_id);
+        return;
+    }
+
     if (in_home) {
         li.removeClass("out_of_home_view");
     } else {
@@ -236,7 +254,7 @@ function build_stream_sidebar_row(sub) {
 
     self.update_unread_count = function () {
         var count = unread.num_unread_for_stream(sub.stream_id);
-        update_count_in_dom(list_item, count);
+        exports.update_count_in_dom(list_item, count);
     };
 
     self.update_unread_count();
@@ -253,12 +271,15 @@ exports.create_sidebar_row = function (sub) {
     build_stream_sidebar_row(sub);
 };
 
-exports.redraw_stream_privacy = function (stream_name) {
-    var sub = stream_data.get_sub(stream_name);
+exports.redraw_stream_privacy = function (sub) {
     var li = exports.get_stream_li(sub.stream_id);
+    if (!li) {
+        blueslip.error('passed in bad stream: ' + sub.name);
+        return;
+    }
+
     var div = li.find('.stream-privacy');
-    var color = stream_data.get_color(stream_name);
-    var dark_background = stream_color.get_color_class(color);
+    var dark_background = stream_color.get_color_class(sub.color);
 
     var args = {
         invite_only: sub.invite_only,
@@ -269,14 +290,15 @@ exports.redraw_stream_privacy = function (stream_name) {
     div.html(html);
 };
 
-function set_count(type, name, count) {
-    var unread_count_elem = get_filter_li(type, name);
-    update_count_in_dom(unread_count_elem, count);
-}
-
 function set_stream_unread_count(stream_id, count) {
     var unread_count_elem = exports.get_stream_li(stream_id);
-    update_count_in_dom(unread_count_elem, count);
+    if (!unread_count_elem) {
+        // This can happen for legitimate reasons, but we warn
+        // just in case.
+        blueslip.warn('stream id no longer in sidebar: ' + stream_id);
+        return;
+    }
+    exports.update_count_in_dom(unread_count_elem, count);
 }
 
 function rebuild_recent_topics(stream_name) {
@@ -319,14 +341,17 @@ exports.update_dom_with_unread_counts = function (counts) {
         });
     });
 
-    // integer counts
-    set_count("global", "mentioned", counts.mentioned_message_count);
-    set_count("global", "home", counts.home_unread_messages);
+    // mentioned/home have simple integer counts
+    var mentioned_li = exports.get_global_filter_li('mentioned');
+    var home_li = exports.get_global_filter_li('home');
+
+    exports.update_count_in_dom(mentioned_li, counts.mentioned_message_count);
+    exports.update_count_in_dom(home_li, counts.home_unread_messages);
 
     unread_ui.set_count_toggle_button($("#streamlist-toggle-unreadcount"),
                                       counts.home_unread_messages);
 
-    unread_ui.animate_mention_changes(get_filter_li('global', 'mentioned'),
+    unread_ui.animate_mention_changes(mentioned_li,
                                       counts.mentioned_message_count);
 };
 
@@ -347,6 +372,10 @@ exports.refresh_pinned_or_unpinned_stream = function (sub) {
     // our sight.
     if (sub.pin_to_top) {
         var stream_li = exports.get_stream_li(sub.stream_id);
+        if (!stream_li) {
+            blueslip.error('passed in bad stream id ' + sub.stream_id);
+            return;
+        }
         exports.scroll_to_active_stream(stream_li);
     }
 };
@@ -359,6 +388,17 @@ exports.maybe_activate_stream_item = function (filter) {
 
         if (stream_id && stream_data.id_is_subscribed(stream_id)) {
             var stream_li = exports.get_stream_li(stream_id);
+
+            if (!stream_li) {
+                // It should be the case then when we have a subscribed
+                // stream, there will always be a stream list item
+                // corresponding to that stream in our sidebar.  We have
+                // evidence that this assumption breaks down for some users,
+                // but we are not clear why it happens.
+                blueslip.error('No stream_li for subscribed stream ' + stream_name);
+                return;
+            }
+
             var op_subject = filter.operands('topic');
             if (op_subject.length === 0) {
                 stream_li.addClass('active-filter');
@@ -374,7 +414,7 @@ function deselect_top_left_corner_items() {
     $("ul.filters li").removeClass('active-filter active-sub-filter');
 }
 
-$(function () {
+exports.initialize = function () {
     // TODO, Eventually topic_list won't be a big singleton,
     // and we can create more component-based click handlers for
     // each stream.
@@ -383,28 +423,35 @@ $(function () {
         zoom_out: zoom_out,
     });
 
-    pm_list.set_click_handlers();
-
     $(document).on('narrow_activated.zulip', function (event) {
         deselect_top_left_corner_items();
         reset_to_unnarrowed(narrow_state.stream() === zoomed_stream);
 
+        var ops;
+        var filter_name;
+        var filter_li;
+
         // TODO: handle confused filters like "in:all stream:foo"
-        var op_in = event.filter.operands('in');
-        if (op_in.length !== 0) {
-            if (['all', 'home'].indexOf(op_in[0]) !== -1) {
-                $("#global_filters li[data-name='" + op_in[0] + "']").addClass('active-filter');
+        ops = event.filter.operands('in');
+        if (ops.length >= 1) {
+            filter_name = ops[0];
+            if (filter_name === 'home') {
+                filter_li = exports.get_global_filter_li(filter_name);
+                filter_li.addClass('active-filter');
             }
         }
-        var op_is = event.filter.operands('is');
-        if (op_is.length !== 0) {
-            if (['starred', 'mentioned'].indexOf(op_is[0]) !== -1) {
-                $("#global_filters li[data-name='" + op_is[0] + "']").addClass('active-filter');
+        ops = event.filter.operands('is');
+        if (ops.length >= 1) {
+            filter_name = ops[0];
+            if ((filter_name === 'starred') || (filter_name === 'mentioned')) {
+                filter_li = exports.get_global_filter_li(filter_name);
+                filter_li.addClass('active-filter');
             }
         }
 
+        var op_is = event.filter.operands('is');
         var op_pm = event.filter.operands('pm-with');
-        if ((op_is.length !== 0 && _.contains(op_is, "private")) || op_pm.length !== 0) {
+        if (((op_is.length >= 1) && _.contains(op_is, "private")) || op_pm.length >= 1) {
             pm_list.expand(op_pm);
         } else {
             pm_list.close();
@@ -412,16 +459,19 @@ $(function () {
 
         var stream_li = exports.maybe_activate_stream_item(event.filter);
         if (stream_li) {
-            unread_ops.process_visible();
             exports.scroll_to_active_stream(stream_li);
         }
+        // Update scrollbar size.
+        $("#stream-filters-container").perfectScrollbar("update");
     });
 
     $(document).on('narrow_deactivated.zulip', function () {
         deselect_top_left_corner_items();
         reset_to_unnarrowed();
         pm_list.close();
-        $("#global_filters li[data-name='home']").addClass('active-filter');
+
+        var filter_li = exports.get_global_filter_li('home');
+        filter_li.addClass('active-filter');
     });
 
     $(document).on('subscription_add_done.zulip', function (event) {
@@ -438,7 +488,7 @@ $(function () {
         if (e.metaKey || e.ctrlKey) {
             return;
         }
-        if (modals.is_active()) {
+        if (overlays.is_active()) {
             ui_util.change_tab_to('#home');
         }
         var stream = $(e.target).parents('li').attr('data-name');
@@ -449,7 +499,7 @@ $(function () {
         e.stopPropagation();
     });
 
-});
+};
 
 function actually_update_streams_for_search() {
     exports.update_streams_sidebar();
@@ -511,7 +561,7 @@ function maybe_select_stream(e) {
         var topStream = $('#stream_filters li.narrow-filter').first().data('name');
         if (topStream !== undefined) {
             // undefined if there are no results
-            if (modals.is_active()) {
+            if (overlays.is_active()) {
                 ui_util.change_tab_to('#home');
             }
             exports.clear_and_hide_search();

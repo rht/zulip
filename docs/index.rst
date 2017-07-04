@@ -23,15 +23,15 @@ This set of documents covers installation and contribution instructions.
 
 Contents:
 
-* :ref:`user-docs`
-* :ref:`prod-install-docs`
-* :ref:`dev-install-docs`
-* :ref:`tutorial-docs`
-* :ref:`code-docs`
+* :ref:`overview`
+* :ref:`zulip-in-production`
+* :ref:`development-environment`
+* :ref:`developer-tutorials`
+* :ref:`code-contribution-guide`
 * :ref:`code-testing`
-* :ref:`system-docs`
+* :ref:`subsystem-documentation`
 
-.. _user-docs:
+.. _overview:
 
 .. toctree::
    :maxdepth: 2
@@ -43,7 +43,7 @@ Contents:
    roadmap
    changelog
 
-.. _prod-install-docs:
+.. _zulip-in-production:
 
 .. toctree::
    :maxdepth: 2
@@ -59,7 +59,7 @@ Contents:
    prod-authentication-methods
    prod-postgres
 
-.. _dev-install-docs:
+.. _development-environment:
 
 .. toctree::
    :maxdepth: 2
@@ -71,20 +71,27 @@ Contents:
    Using the development environment <using-dev-environment>
    Developing remotely <dev-remote>
 
-.. _tutorial-docs:
+.. _developer-tutorials:
 
 .. toctree::
    :maxdepth: 2
    :caption: Developer tutorials
 
    integration-guide
+   integration-docs-guide
    webhook-walkthrough
    new-feature-tutorial
    writing-views
    life-of-a-request
    reading-list
+   screenshot-and-gif-software
+   fixing-commits
+   git-cheat-sheet-detailed
+   git-cheat-sheet
+   shell-tips
+   working-copies
 
-.. _code-docs:
+.. _code-contribution-guide:
 
 .. toctree::
    :maxdepth: 2
@@ -107,12 +114,13 @@ Contents:
 
    testing
    linters
-   testing-with-node
    testing-with-django
+   testing-with-node
    testing-with-casper
+   travis
    manual-testing
 
-.. _system-docs:
+.. _subsystem-documentation:
 
 .. toctree::
    :maxdepth: 2
@@ -132,10 +140,13 @@ Contents:
    hashchange-system
    emoji
    full-text-search
+   email
    analytics
    translating
    client
    logging
    release-checklist
+   api-release-checklist
+   swagger-api-docs
    README
    user-docs

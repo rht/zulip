@@ -15,13 +15,13 @@ from django.core import validators
 from zerver.models import UserProfile, Realm, PreregistrationUser, \
     name_changes_disabled, email_to_username, \
     completely_open, get_unique_open_realm, email_allowed_for_realm, \
-    get_realm, get_realm_by_email_domain
-from zerver.lib.send_email import send_email_to_user
+    get_realm, get_realm_by_email_domain, get_system_bot
+from zerver.lib.send_email import send_email, send_email_to_user
 from zerver.lib.events import do_events_register
 from zerver.lib.actions import do_change_password, do_change_full_name, do_change_is_admin, \
     do_activate_user, do_create_user, do_create_realm, set_default_streams, \
     user_email_is_unique, create_streams_with_welcome_messages, \
-    compute_mit_user_fullname
+    compute_mit_user_fullname, internal_send_private_message
 from zerver.forms import RegistrationForm, HomepageForm, RealmCreationForm, \
     CreateUserForm, FindMyTeamForm
 from zerver.lib.actions import is_inactive, do_set_user_display_setting
@@ -63,6 +63,16 @@ def redirect_and_log_into_subdomain(realm, full_name, email_address,
                                salt='zerver.views.auth')
     return response
 
+def send_initial_pms(user):
+    # type: (UserProfile) -> None
+    content = """Welcome to Zulip!
+
+This is a great place to test formatting, sending, and editing messages.
+Click anywhere on this message to reply. A compose box will open at the bottom of the screen."""
+
+    internal_send_private_message(user.realm, get_system_bot(settings.WELCOME_BOT),
+                                  user.email, content)
+
 @require_post
 def accounts_register(request):
     # type: (HttpRequest) -> HttpResponse
@@ -81,7 +91,7 @@ def accounts_register(request):
     # special URL with domain name so that REALM can be identified if multiple realms exist
     unique_open_realm = get_unique_open_realm()
     if unique_open_realm is not None:
-        realm = unique_open_realm
+        realm = unique_open_realm  # type: Optional[Realm]
     elif prereg_user.referred_by:
         # If someone invited you, you are joining their realm regardless
         # of your e-mail address.
@@ -106,8 +116,7 @@ def accounts_register(request):
         # The user is trying to register for a deactivated realm. Advise them to
         # contact support.
         return render(request, "zerver/deactivated.html",
-                      context={"deactivated_domain_name": realm.name,
-                               "zulip_administrator": settings.ZULIP_ADMINISTRATOR})
+                      context={"deactivated_domain_name": realm.name})
 
     try:
         if existing_user_profile is not None and existing_user_profile.is_mirror_dummy:
@@ -135,7 +144,8 @@ def accounts_register(request):
             # zephyr mirroring realm.
             hesiod_name = compute_mit_user_fullname(email)
             form = RegistrationForm(
-                initial={'full_name': hesiod_name if "@" not in hesiod_name else ""})
+                initial={'full_name': hesiod_name if "@" not in hesiod_name else ""},
+                realm_creation=realm_creation)
             name_validated = True
         elif settings.POPULATE_PROFILE_VIA_LDAP:
             for backend in get_backends():
@@ -150,20 +160,22 @@ def accounts_register(request):
                         # filled out by the user) we want the form to validate,
                         # so they can be directly registered without having to
                         # go through this interstitial.
-                        form = RegistrationForm({'full_name': ldap_full_name})
+                        form = RegistrationForm({'full_name': ldap_full_name},
+                                                realm_creation=realm_creation)
                         # FIXME: This will result in the user getting
                         # validation errors if they have to enter a password.
                         # Not relevant for ONLY_SSO, though.
                         break
                     except TypeError:
                         # Let the user fill out a name and/or try another backend
-                        form = RegistrationForm()
+                        form = RegistrationForm(realm_creation=realm_creation)
         elif 'full_name' in request.POST:
             form = RegistrationForm(
-                initial={'full_name': request.POST.get('full_name')}
+                initial={'full_name': request.POST.get('full_name')},
+                realm_creation=realm_creation
             )
         else:
-            form = RegistrationForm()
+            form = RegistrationForm(realm_creation=realm_creation)
     else:
         postdata = request.POST.copy()
         if name_changes_disabled(realm):
@@ -175,7 +187,7 @@ def accounts_register(request):
                 name_validated = True
             except KeyError:
                 pass
-        form = RegistrationForm(postdata)
+        form = RegistrationForm(postdata, realm_creation=realm_creation)
         if not password_auth_enabled(realm):
             form['password'].field.required = False
 
@@ -196,6 +208,7 @@ def accounts_register(request):
 
             create_streams_with_welcome_messages(realm, stream_info)
             set_default_streams(realm, stream_info)
+        assert(realm is not None)
 
         full_name = form.cleaned_data['full_name']
         short_name = email_to_username(email)
@@ -210,7 +223,7 @@ def accounts_register(request):
             user_profile = existing_user_profile
             do_activate_user(user_profile)
             do_change_password(user_profile, password)
-            do_change_full_name(user_profile, full_name)
+            do_change_full_name(user_profile, full_name, user_profile)
             do_set_user_display_setting(user_profile, 'timezone', timezone)
         else:
             user_profile = do_create_user(email, password, realm, full_name, short_name,
@@ -221,6 +234,8 @@ def accounts_register(request):
 
         if first_in_realm:
             do_change_is_admin(user_profile, True)
+
+        send_initial_pms(user_profile)
 
         if realm_creation and settings.REALMS_HAVE_SUBDOMAINS:
             # Because for realm creation, registration happens on the
@@ -291,27 +306,17 @@ def accounts_home_with_realm_str(request, realm_str):
         return HttpResponseRedirect(reverse('zerver.views.registration.accounts_home'))
 
 def send_registration_completion_email(email, request, realm_creation=False):
-    # type: (str, HttpRequest, bool) -> Confirmation
+    # type: (str, HttpRequest, bool) -> None
     """
     Send an email with a confirmation link to the provided e-mail so the user
     can complete their registration.
     """
-    template_prefix = 'zerver/emails/confirm_registration'
-    # Note: to make the following work in the non-subdomains case, you'll
-    # need to copy the logic from the beginning of accounts_register to
-    # figure out which realm the user is trying to sign up for, and then
-    # check if it is a zephyr mirror realm.
-    if settings.REALMS_HAVE_SUBDOMAINS:
-        realm = get_realm(get_subdomain(request))
-        if realm and realm.is_zephyr_mirror_realm:
-            template_prefix = 'zerver/emails/confirm_registration_mit'
-
     prereg_user = create_preregistration_user(email, request, realm_creation)
-    context = {'support_email': settings.ZULIP_ADMINISTRATOR,
-               'verbose_support_offers': settings.VERBOSE_SUPPORT_OFFERS}
-    return Confirmation.objects.send_confirmation(prereg_user, template_prefix, email,
-                                                  additional_context=context,
-                                                  host=request.get_host())
+    activation_url = Confirmation.objects.get_link_for_object(prereg_user, host=request.get_host())
+    send_email('zerver/emails/confirm_registration', email, from_email=settings.ZULIP_ADMINISTRATOR,
+               context={'activate_url': activation_url})
+    if settings.DEVELOPMENT and realm_creation:
+        request.session['confirmation_key'] = {'confirmation_key': activation_url.split('/')[-1]}
 
 def redirect_to_email_login_url(email):
     # type: (str) -> HttpResponseRedirect
@@ -336,9 +341,7 @@ def create_realm(request, creation_key=None):
         form = RealmCreationForm(request.POST)
         if form.is_valid():
             email = form.cleaned_data['email']
-            confirmation_key = send_registration_completion_email(email, request, realm_creation=True).confirmation_key
-            if settings.DEVELOPMENT:
-                request.session['confirmation_key'] = {'confirmation_key': confirmation_key}
+            send_registration_completion_email(email, request, realm_creation=True)
             if (creation_key is not None and check_key_is_valid(creation_key)):
                 RealmCreationKey.objects.get(creation_key=creation_key).delete()
             return HttpResponseRedirect(reverse('send_confirm', kwargs={'email': email}))

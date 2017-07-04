@@ -180,13 +180,26 @@ exports.reply_to_to_user_ids_string = function (emails_string) {
     return user_ids.join(',');
 };
 
-exports.get_user_time = function (user_id) {
+exports.get_user_time_preferences = function (user_id) {
     var user_timezone = people.get_person_from_user_id(user_id).timezone;
     if (user_timezone) {
         if (page_params.twenty_four_hour_time) {
-            return moment().tz(user_timezone).format("HH:mm");
+            return {
+                timezone: user_timezone,
+                format: "HH:mm",
+            };
         }
-        return moment().tz(user_timezone).format("hh:mm A");
+        return {
+            timezone: user_timezone,
+            format: "hh:mm A",
+        };
+    }
+};
+
+exports.get_user_time = function (user_id) {
+    var user_pref = people.get_user_time_preferences(user_id);
+    if (user_pref) {
+        return moment().tz(user_pref.timezone).format(user_pref.format);
     }
 };
 
@@ -359,6 +372,11 @@ exports.pm_with_operand_ids = function (operand) {
         return people_dict.get(email);
     });
 
+    // If your email is included in a PM group with other people, just ignore it
+    if (persons.length > 1) {
+        persons = _.without(persons, people_by_user_id_dict.get(my_user_id));
+    }
+
     if (!_.all(persons)) {
         return;
     }
@@ -492,29 +510,51 @@ exports.incr_recipient_count = function (user_id) {
     pm_recipient_count_dict.set(user_id, old_count + 1);
 };
 
+// Diacritic removal from:
+// https://stackoverflow.com/questions/18236208/perform-a-find-match-with-javascript-ignoring-special-language-characters-acce
+function remove_diacritics(s) {
+    if (/^[a-z]+$/.test(s)) {
+        return s;
+    }
+
+    return s
+            .replace(/[áàãâä]/g,"a")
+            .replace(/[éèëê]/g,"e")
+            .replace(/[íìïî]/g,"i")
+            .replace(/[óòöôõ]/g,"o")
+            .replace(/[úùüû]/g, "u")
+            .replace(/[ç]/g, "c")
+            .replace(/[ñ]/g, "n");
+}
+
+exports.person_matches_query = function (user, query) {
+    var email = user.email.toLowerCase();
+    var names = user.full_name.toLowerCase().split(' ');
+
+    var termlets = query.toLowerCase().split(/\s+/);
+    termlets = _.map(termlets, function (termlet) {
+        return termlet.trim();
+    });
+
+    if (email.indexOf(query.trim()) === 0) {
+        return true;
+    }
+    return _.all(termlets, function (termlet) {
+        var is_ascii = /^[a-z]+$/.test(termlet);
+        return _.any(names, function (name) {
+            if (is_ascii) {
+                // Only ignore diacritics if the query is plain ascii
+                name = remove_diacritics(name);
+            }
+            if (name.indexOf(termlet) === 0) {
+                return true;
+            }
+        });
+    });
+};
+
 exports.filter_people_by_search_terms = function (users, search_terms) {
         var filtered_users = new Dict();
-
-        var matchers = _.map(search_terms, function (search_term) {
-            var termlets = search_term.toLowerCase().split(/\s+/);
-            termlets = _.map(termlets, function (termlet) {
-                return termlet.trim();
-            });
-
-            return function (email, names) {
-                if (email.indexOf(search_term.trim()) === 0) {
-                    return true;
-                }
-                return _.all(termlets, function (termlet) {
-                    return _.any(names, function (name) {
-                        if (name.indexOf(termlet) === 0) {
-                            return true;
-                        }
-                    });
-                });
-            };
-        });
-
 
         // Loop through users and populate filtered_users only
         // if they include search_terms
@@ -525,18 +565,9 @@ exports.filter_people_by_search_terms = function (users, search_terms) {
                 return;
             }
 
-            var email = user.email.toLowerCase();
-
-            // Remove extra whitespace
-            var names = person.full_name.toLowerCase().split(/\s+/);
-            names = _.map(names, function (name) {
-                return name.trim();
-            });
-
-
             // Return user emails that include search terms
-            var match = _.any(matchers, function (matcher) {
-                return matcher(email, names);
+            var match = _.any(search_terms, function (search_term) {
+                return exports.person_matches_query(user, search_term);
             });
 
             if (match) {

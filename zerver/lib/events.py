@@ -163,26 +163,15 @@ def fetch_initial_state_data(user_profile, event_types, queue_id,
         state['realm_default_streams'] = streams_to_dicts_sorted(get_default_streams_for_realm(user_profile.realm))
 
     if want('update_display_settings'):
-        state['twenty_four_hour_time'] = user_profile.twenty_four_hour_time
-        state['left_side_userlist'] = user_profile.left_side_userlist
-        state['emoji_alt_code'] = user_profile.emoji_alt_code
-        state['emojiset'] = user_profile.emojiset
+        for prop in UserProfile.property_types:
+            state[prop] = getattr(user_profile, prop)
         state['emojiset_choices'] = user_profile.emojiset_choices()
-        state['timezone'] = user_profile.timezone
-        state['default_language'] = user_profile.default_language
         state['autoscroll_forever'] = user_profile.autoscroll_forever
 
     if want('update_global_notifications'):
+        for notification in UserProfile.notification_setting_types:
+            state[notification] = getattr(user_profile, notification)
         state['default_desktop_notifications'] = user_profile.default_desktop_notifications
-        state['enable_stream_desktop_notifications'] = user_profile.enable_stream_desktop_notifications
-        state['enable_stream_sounds'] = user_profile.enable_stream_sounds
-        state['enable_desktop_notifications'] = user_profile.enable_desktop_notifications
-        state['enable_sounds'] = user_profile.enable_sounds
-        state['enable_offline_email_notifications'] = user_profile.enable_offline_email_notifications
-        state['enable_offline_push_notifications'] = user_profile.enable_offline_push_notifications
-        state['enable_online_push_notifications'] = user_profile.enable_online_push_notifications
-        state['enable_digest_emails'] = user_profile.enable_digest_emails
-        state['pm_content_in_desktop_notifications'] = user_profile.pm_content_in_desktop_notifications
 
     if want('zulip_version'):
         state['zulip_version'] = ZULIP_VERSION
@@ -320,7 +309,8 @@ def apply_event(state, event, user_profile, include_subscribers):
             state[field] = event['value']
 
             # Tricky interaction: Whether we can create streams can get changed here.
-            if field == 'realm_create_stream_by_admins_only' and 'can_create_streams' in state:
+            if (field in ['realm_create_stream_by_admins_only',
+                          'realm_waiting_period_threshold']) and 'can_create_streams' in state:
                 state['can_create_streams'] = user_profile.can_create_streams()
         elif event['op'] == "update_dict":
             for key, value in event['data'].items():
@@ -412,6 +402,13 @@ def apply_event(state, event, user_profile, include_subscribers):
     elif event['type'] == "update_message":
         # The client will get the updated message directly
         pass
+    elif event['type'] == "delete_message":
+        max_message = Message.objects.filter(
+            usermessage__user_profile=user_profile).order_by('-id').first()
+        if max_message:
+            state['max_message_id'] = max_message.id
+        else:
+            state['max_message_id'] = -1
     elif event['type'] == "reaction":
         # The client will get the message with the reactions directly
         pass

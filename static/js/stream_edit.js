@@ -14,6 +14,28 @@ function settings_for_sub(sub) {
     return $("#subscription_overlay .subscription_settings[data-stream-id='" + id + "']");
 }
 
+function get_email_of_subscribers(subscribers) {
+    var emails = [];
+    subscribers.each(function (o, i) {
+        var email = people.get_person_from_user_id(i).email;
+        emails.push(email);
+    });
+    return emails;
+}
+
+function rerender_subscribers_list(sub) {
+    var emails = get_email_of_subscribers(sub.subscribers);
+    var subscribers_list = list_render.get("stream_subscribers/" + sub.stream_id);
+
+    // Changing the data clears the rendered list and the list needs to be re-rendered.
+    // Perform re-rendering only when the stream settings form of the corresponding
+    // stream is open.
+    if (subscribers_list) {
+        subscribers_list.data(emails);
+        subscribers_list.render();
+    }
+}
+
 exports.collapse = function (sub) {
     // I am not sure whether this code is really correct; it was extracted
     // from subs.update_settings_for_unsubscribed() and possibly pre-dates
@@ -153,11 +175,7 @@ function show_subscription_settings(sub_row) {
     alerts.addClass("hide");
     list.empty();
 
-    var emails = [];
-    sub.subscribers.each(function (o, i) {
-        var email = people.get_person_from_user_id(i).email;
-        emails.push(email);
-    });
+    var emails = get_email_of_subscribers(sub.subscribers);
 
     list_render(list, emails.sort(), {
         name: "stream_subscribers/" + stream_id,
@@ -183,8 +201,7 @@ function show_subscription_settings(sub_row) {
         source: people.get_realm_persons, // This is a function.
         items: 5,
         highlighter: function (item) {
-            var item_formatted = typeahead_helper.render_person(item);
-            return typeahead_helper.highlight_with_escaping(this.query, item_formatted);
+            return typeahead_helper.render_person(item);
         },
         matcher: function (item) {
             var query = $.trim(this.query.toLowerCase());
@@ -255,20 +272,12 @@ exports.set_stream_property = function (sub, property, value) {
     });
 };
 
-function set_notification_setting_for_all_streams(notification_type, new_setting) {
+exports.set_notification_setting_for_all_streams = function (notification_type, new_setting) {
     _.each(stream_data.subscribed_subs(), function (sub) {
         if (sub[notification_type] !== new_setting) {
             exports.set_stream_property(sub, notification_type, new_setting);
         }
     });
-}
-
-exports.set_all_stream_desktop_notifications_to = function (new_setting) {
-    set_notification_setting_for_all_streams("desktop_notifications", new_setting);
-};
-
-exports.set_all_stream_audible_notifications_to = function (new_setting) {
-    set_notification_setting_for_all_streams("audible_notifications", new_setting);
 };
 
 function redraw_privacy_related_stuff(sub_row, sub) {
@@ -293,7 +302,7 @@ function redraw_privacy_related_stuff(sub_row, sub) {
             .html("");
     }
 
-    stream_list.redraw_stream_privacy(sub.name);
+    stream_list.redraw_stream_privacy(sub);
 }
 
 function change_stream_privacy(e) {
@@ -570,18 +579,12 @@ $(function () {
 
     $(document).on('peer_subscribe.zulip', function (e, data) {
         var sub = stream_data.get_sub(data.stream_name);
-        var sub_row = settings_for_sub(sub);
-        exports.prepend_subscriber(sub_row, data.user_email);
+        rerender_subscribers_list(sub);
     });
 
     $(document).on('peer_unsubscribe.zulip', function (e, data) {
         var sub = stream_data.get_sub(data.stream_name);
-
-        var sub_row = settings_for_sub(sub);
-        var tr = sub_row.find("tr[data-subscriber-email='" +
-                              data.user_email +
-                              "']");
-        tr.remove();
+        rerender_subscribers_list(sub);
     });
 
 });

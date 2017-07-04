@@ -10,10 +10,16 @@ set_global('page_params', {
     use_websockets: false,
 });
 
-set_global('$', global.zjquery);
+set_global('$', function () {
+});
 
 add_dependencies({
     compose: 'js/compose',
+});
+
+set_global('$', global.make_zjquery());
+
+add_dependencies({
     compose_state: 'js/compose_state',
     people: 'js/people',
     util: 'js/util',
@@ -58,7 +64,9 @@ set_global('unread_ops', {
     mark_message_as_read: noop,
 });
 
-set_global('status_classes', 'status_classes');
+set_global('common', {
+    status_classes: 'status_classes',
+});
 
 function stub_selected_message(msg) {
     set_global('current_msg_list', {
@@ -115,6 +123,8 @@ function assert_hidden(sel) {
     opts = {
         content: 'hello',
     };
+
+    $('#new_message_content').trigger = noop;
     start('private', opts);
 
     assert_hidden('#stream-message');

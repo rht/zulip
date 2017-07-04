@@ -17,6 +17,19 @@ function is_local_part(value, element) {
     return this.optional(element) || /^[\-!#$%&'*+\/=?\^_`{}|~0-9A-Z]+(\.[\-!#$%&'*+\/=?\^_`{}|~0-9A-Z]+)*$/i.test(value);
 }
 
+// Note: These strings are mostly duplicates with a similar data set
+// in the bot-settings.handlebars.  We'll probably want to move this
+// map to be sent from the backend and shared.
+exports.type_id_to_string = function (type_id) {
+    if (type_id === 1) {
+        return i18n.t("Generic bot");
+    } else if (type_id === 2) {
+        return i18n.t("Incoming webhook");
+    } else if (type_id === 3) {
+        return i18n.t("Outgoing webhook");
+    }
+};
+
 function render_bots() {
     $('#active_bots_list').empty();
     $('#inactive_bots_list').empty();
@@ -25,6 +38,7 @@ function render_bots() {
         add_bot_row({
             name: elem.full_name,
             email: elem.email,
+            type: exports.type_id_to_string(elem.bot_type),
             avatar_url: elem.avatar_url,
             api_key: elem.api_key,
             is_active: elem.is_active,
@@ -56,41 +70,36 @@ exports.generate_zuliprc_content = function (email, api_key) {
            "\n";
 };
 
+function bot_name_from_email(email) {
+    return email.substring(0, email.indexOf("-bot@"));
+}
+
+exports.generate_flaskbotrc_content = function (email, api_key) {
+    return "[" + bot_name_from_email(email) + "]" +
+           "\nemail=" + email +
+           "\nkey=" + api_key +
+           "\nsite=" + page_params.realm_uri +
+           "\n";
+};
+
 exports.set_up = function () {
-    $("#api_key_value").text("");
-    $("#get_api_key_box").hide();
-    $("#show_api_key_box").hide();
-    $("#api_key_button_box").show();
+    $('#payload_url_inputbox').hide();
+    $('#create_payload_url').val('');
 
-    $('#api_key_button').click(function () {
-        if (page_params.realm_password_auth_enabled !== false) {
-            $("#get_api_key_box").show();
-        } else {
-            // Skip the password prompt step
-            $("#get_api_key_box form").submit();
-        }
-        $("#api_key_button_box").hide();
-    });
+    $('#download_flaskbotrc').click(function () {
+        var OUTGOING_WEBHOOK_BOT_TYPE_INT = 3;
+        var content = "";
+        $("#active_bots_list .bot-information-box").each(function () {
+            var bot_info = $(this);
+            var email = bot_info.find(".email .value").text();
+            var api_key = bot_info.find(".api_key .api-key-value-and-button .value").text();
+            var bot = bot_data.get(email);
 
-    $("#get_api_key_box").hide();
-    $("#show_api_key_box").hide();
-    $("#get_api_key_box form").ajaxForm({
-        dataType: 'json', // This seems to be ignored. We still get back an xhr.
-        success: function (resp, statusText, xhr) {
-            var result = JSON.parse(xhr.responseText);
-            var settings_status = $('#account-settings-status').expectOne();
-
-            $("#get_api_key_password").val("");
-            $("#api_key_value").text(result.api_key);
-            $("#show_api_key_box").show();
-            $("#get_api_key_box").hide();
-            settings_status.hide();
-        },
-        error: function (xhr) {
-            ui_report.error(i18n.t("Error getting API key"), xhr, $('#account-settings-status').expectOne());
-            $("#show_api_key_box").hide();
-            $("#get_api_key_box").show();
-        },
+            if (bot.bot_type === OUTGOING_WEBHOOK_BOT_TYPE_INT) {
+                content += exports.generate_flaskbotrc_content(email, api_key);
+            }
+        });
+        $(this).attr("href", "data:application/octet-stream;charset=utf-8," + encodeURIComponent(content));
     });
 
     // TODO: render bots xxxx
@@ -105,6 +114,8 @@ exports.set_up = function () {
 
 
     var create_avatar_widget = avatar.build_bot_create_widget();
+    var OUTGOING_WEBHOOK_BOT_TYPE = '3';
+    var GENERIC_BOT_TYPE = '1';
 
     $('#create_bot_form').validate({
         errorClass: 'text-error',
@@ -112,13 +123,21 @@ exports.set_up = function () {
             $('#bot_table_error').hide();
         },
         submitHandler: function () {
+            var bot_type = $('#create_bot_type :selected').val();
             var full_name = $('#create_bot_name').val();
             var short_name = $('#create_bot_short_name').val() || $('#create_bot_short_name').text();
+            var payload_url = $('#create_payload_url').val();
             var formData = new FormData();
 
             formData.append('csrfmiddlewaretoken', csrf_token);
+            formData.append('bot_type', bot_type);
             formData.append('full_name', full_name);
             formData.append('short_name', short_name);
+
+            // If the selected bot_type is Outgoing webhook
+            if (bot_type === OUTGOING_WEBHOOK_BOT_TYPE) {
+                formData.append('payload_url', JSON.stringify(payload_url));
+            }
             jQuery.each($('#bot_avatar_file_input')[0].files, function (i, file) {
                 formData.append('file-'+i, file);
             });
@@ -133,6 +152,9 @@ exports.set_up = function () {
                     $('#bot_table_error').hide();
                     $('#create_bot_name').val('');
                     $('#create_bot_short_name').val('');
+                    $('#create_payload_url').val('');
+                    $('#payload_url_inputbox').hide();
+                    $('#create_bot_type').val(GENERIC_BOT_TYPE);
                     $('#create_bot_button').show();
                     create_avatar_widget.clear();
                 },
@@ -144,6 +166,18 @@ exports.set_up = function () {
                 },
             });
         },
+    });
+
+    $("#create_bot_type").on("change", function () {
+        var bot_type = $('#create_bot_type :selected').val();
+        // If the selected bot_type is Outgoing webhook
+        if (bot_type === OUTGOING_WEBHOOK_BOT_TYPE) {
+            $('#payload_url_inputbox').show();
+            $('#create_payload_url').addClass('required');
+        } else {
+            $('#payload_url_inputbox').hide();
+            $('#create_payload_url').removeClass('required');
+        }
     });
 
     $("#active_bots_list").on("click", "button.delete_bot", function (e) {
@@ -295,26 +329,6 @@ exports.set_up = function () {
         $(this).attr("href", exports.generate_zuliprc_uri(
             $.trim(email), $.trim(api_key)
         ));
-    });
-
-    $("#download_zuliprc").on("click", function () {
-        $(this).attr("href", exports.generate_zuliprc_uri(
-            people.my_current_email(),
-            $("#api_key_value").text()
-        ));
-    });
-
-    $("#show_api_key_box").on("click", "button.regenerate_api_key", function () {
-        channel.post({
-            url: '/json/users/me/api_key/regenerate',
-            idempotent: true,
-            success: function (data) {
-                $('#api_key_value').text(data.api_key);
-            },
-            error: function (xhr) {
-                $('#user_api_key_error').text(JSON.parse(xhr.responseText).msg).show();
-            },
-        });
     });
 
     $("#bots_lists_navbar .active-bots-tab").click(function (e) {

@@ -19,15 +19,45 @@ casper.waitForSelector('#settings_overlay_container.show', function () {
     casper.test.assertUrlMatch(/^http:\/\/[^/]+\/#organization/, 'URL suggests we are on organization page');
 });
 
+// Test changing notifications stream
+casper.then(function () {
+    casper.test.info('Changing notifications stream to Verona by filtering with "verona"');
+    casper.click("#id_realm_notifications_stream > a.dropdown-toggle");
+
+    casper.waitUntilVisible('ul.dropdown-menu', function () {
+        casper.sendKeys('.dropdown-search > input[type=text]', 'verona');
+        casper.click(".dropdown-list-body li.stream_name");
+    });
+
+    casper.waitUntilVisible('#admin-realm-notifications-stream-status', function () {
+        casper.test.assertSelectorHasText('#admin-realm-notifications-stream-status',
+                                          'Notifications stream changed!');
+        casper.test.assertSelectorHasText('#realm_notifications_stream_name', '#Verona');
+    });
+});
+
+casper.then(function () {
+    casper.click(".notifications-stream-disable");
+    casper.waitUntilVisible('#admin-realm-notifications-stream-status', function () {
+        casper.test.assertSelectorHasText('#admin-realm-notifications-stream-status',
+                                          'Notifications stream disabled!');
+        casper.test.assertSelectorHasText('#realm_notifications_stream_name', 'Disabled');
+    });
+});
+
 // Test permissions setting
 casper.then(function () {
     casper.click("li[data-section='organization-permissions']");
 });
 
+function submit_permissions_change() {
+    casper.click('form.org-permissions-form button.button');
+}
+
 // Test setting limiting stream creation to administrators
 casper.then(function () {
     casper.click('#id_realm_create_stream_by_admins_only + span');
-    casper.click('form.admin-realm-form button.button');
+    submit_permissions_change();
 });
 
 casper.then(function () {
@@ -58,7 +88,7 @@ casper.waitUntilVisible('#id_realm_create_stream_by_admins_only + span', functio
     // Deactivate setting
 
     casper.click('#id_realm_create_stream_by_admins_only + span');
-    casper.click('form.admin-realm-form button.button');
+    submit_permissions_change();
 });
 
 casper.then(function () {
@@ -236,6 +266,10 @@ casper.then(function () {
     });
 });
 
+function submit_org_settings_change() {
+    casper.click('form.org-settings-form button.button');
+}
+
 casper.then(function () {
     casper.click("li[data-section='organization-settings']");
     casper.waitUntilVisible('#id_realm_default_language', function () {
@@ -243,7 +277,7 @@ casper.then(function () {
         casper.evaluate(function () {
             $('#id_realm_default_language').val('de').change();
         });
-        casper.click('form.admin-realm-form button.button');
+        submit_org_settings_change();
     });
 });
 
@@ -254,12 +288,16 @@ casper.then(function () {
     });
 });
 
+function submit_org_authentication_change() {
+    casper.click('form.org-authentications-form button.button');
+}
+
 // Test authentication methods setting
 casper.then(function () {
     casper.click("li[data-section='auth-methods']");
     casper.waitUntilVisible(".method_row[data-method='Email'] input[type='checkbox'] + span", function () {
         casper.click(".method_row[data-method='Email'] input[type='checkbox'] + span");
-        casper.click('form.admin-realm-form button.button');
+        submit_org_authentication_change();
     });
 });
 
@@ -294,7 +332,7 @@ casper.then(function () {
 // Deactivate setting--default is checked
 casper.then(function () {
     casper.click(".method_row[data-method='Email'] input[type='checkbox'] + span");
-    casper.click('form.admin-realm-form button.button');
+    submit_org_authentication_change();
     casper.waitUntilVisible('#admin-realm-authentication-methods-status', function () {
         casper.test.assertSelectorHasText('#admin-realm-authentication-methods-status', 'Authentication methods saved!');
         casper.test.assertEval(function () {

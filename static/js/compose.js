@@ -17,7 +17,7 @@ exports.all_everyone_warn_threshold = 15;
 var uploads_domain = document.location.protocol + '//' + document.location.host;
 var uploads_path = '/user_uploads';
 var uploads_re = new RegExp("\\]\\(" + uploads_domain + "(" + uploads_path + "[^\\)]+)\\)", 'g');
-
+var clone_file_input;
 function make_upload_absolute(uri) {
     if (uri.indexOf(uploads_path) === 0) {
         // Rewrite the URI to a usable link
@@ -34,17 +34,16 @@ function make_uploads_relative(content) {
 // This function resets an input type="file".  Pass in the
 // jquery object.
 function clear_out_file_list(jq_file_list) {
-    var clone_for_ie_sake = jq_file_list.clone(true);
-    jq_file_list.replaceWith(clone_for_ie_sake);
-
+    if (clone_file_input !== undefined) {
+        jq_file_list.replaceWith(clone_file_input.clone(true));
+    }
     // Hack explanation:
     // IE won't let you do this (untested, but so says StackOverflow):
     //    $("#file_input").val("");
 }
 
 function show_all_everyone_warnings() {
-    var current_stream = stream_data.get_sub(compose_state.stream_name());
-    var stream_count = current_stream.subscribers.num_items();
+    var stream_count = stream_data.get_subscriber_count(compose_state.stream_name()) || 0;
 
     var all_everyone_template = templates.render("compose_all_everyone", {count: stream_count});
     var error_area_all_everyone = $("#compose-all-everyone");
@@ -90,13 +89,6 @@ function update_fade() {
     compose_fade.set_focused_recipient(msg_type);
     compose_fade.update_faded_messages();
 }
-
-$(function () {
-    $('#stream,#subject,#private_message_recipient').bind({
-         keyup: update_fade,
-         change: update_fade,
-    });
-});
 
 exports.abort_xhr = function () {
     $("#compose-send-button").removeAttr("disabled");
@@ -154,7 +146,7 @@ function create_message_object() {
 exports.create_message_object = create_message_object;
 
 function compose_error(error_text, bad_input) {
-    $('#send-status').removeClass(status_classes)
+    $('#send-status').removeClass(common.status_classes)
                .addClass('alert-error')
                .stop(true).fadeTo(0, 1);
     $('#error-msg').html(error_text);
@@ -418,13 +410,6 @@ exports.finish = function () {
     return true;
 };
 
-$(function () {
-    $("#compose form").on("submit", function (e) {
-       e.preventDefault();
-       compose.finish();
-    });
-});
-
 exports.update_email = function (user_id, new_email) {
     var reply_to = compose_state.recipient();
 
@@ -457,14 +442,11 @@ exports.get_invalid_recipient_emails = function () {
     return invalid_recipients;
 };
 
-function check_stream_for_send(stream_name, autosubscribe) {
+function check_unsubscribed_stream_for_send(stream_name, autosubscribe) {
     var stream_obj = stream_data.get_sub(stream_name);
     var result;
     if (!stream_obj) {
         return "does-not-exist";
-    }
-    if (stream_obj.subscribed) {
-        return "subscribed";
     }
     if (!autosubscribe) {
         return "not-subscribed";
@@ -497,8 +479,7 @@ function check_stream_for_send(stream_name, autosubscribe) {
 }
 
 function validate_stream_message_mentions(stream_name) {
-    var current_stream = stream_data.get_sub(stream_name);
-    var stream_count = current_stream.subscribers.num_items();
+    var stream_count = stream_data.get_subscriber_count(stream_name) || 0;
 
     // check if @all or @everyone is in the message
     if (util.is_all_or_everyone_mentioned(compose_state.message_content()) &&
@@ -522,31 +503,33 @@ function validate_stream_message_mentions(stream_name) {
     return true;
 }
 
-function validate_stream_message_address_info(stream_name) {
-    var response;
-
-    if (!stream_data.is_subscribed(stream_name)) {
-        switch (check_stream_for_send(stream_name, page_params.narrow_stream !== undefined)) {
-        case "does-not-exist":
-            response = "<p>The stream <b>" +
-                Handlebars.Utils.escapeExpression(stream_name) + "</b> does not exist.</p>" +
-                "<p>Manage your subscriptions <a href='#streams/all'>on your Streams page</a>.</p>";
-            compose_error(response, $('#stream'));
-            return false;
-        case "error":
-            compose_error(i18n.t("Error checking subscription"), $("#stream"));
-            return false;
-        case "not-subscribed":
-            response = "<p>You're not subscribed to the stream <b>" +
-                Handlebars.Utils.escapeExpression(stream_name) + "</b>.</p>" +
-                "<p>Manage your subscriptions <a href='#streams/all'>on your Streams page</a>.</p>";
-            compose_error(response, $('#stream'));
-            return false;
-        }
+exports.validate_stream_message_address_info = function (stream_name) {
+    if (stream_data.is_subscribed(stream_name)) {
+        return true;
     }
 
+    var response;
+
+    switch (check_unsubscribed_stream_for_send(stream_name,
+                                               page_params.narrow_stream !== undefined)) {
+    case "does-not-exist":
+        response = "<p>The stream <b>" +
+            Handlebars.Utils.escapeExpression(stream_name) + "</b> does not exist.</p>" +
+            "<p>Manage your subscriptions <a href='#streams/all'>on your Streams page</a>.</p>";
+        compose_error(response, $('#stream'));
+        return false;
+    case "error":
+        compose_error(i18n.t("Error checking subscription"), $("#stream"));
+        return false;
+    case "not-subscribed":
+        response = "<p>You're not subscribed to the stream <b>" +
+            Handlebars.Utils.escapeExpression(stream_name) + "</b>.</p>" +
+            "<p>Manage your subscriptions <a href='#streams/all'>on your Streams page</a>.</p>";
+        compose_error(response, $('#stream'));
+        return false;
+    }
     return true;
-}
+};
 
 function validate_stream_message() {
     var stream_name = compose_state.stream_name();
@@ -563,7 +546,7 @@ function validate_stream_message() {
         }
     }
 
-    if (!validate_stream_message_address_info(stream_name) ||
+    if (!exports.validate_stream_message_address_info(stream_name) ||
         !validate_stream_message_mentions(stream_name)) {
         return false;
     }
@@ -617,7 +600,17 @@ exports.validate = function () {
     return validate_stream_message();
 };
 
-$(function () {
+exports.initialize = function () {
+    $('#stream,#subject,#private_message_recipient').bind({
+         keyup: update_fade,
+         change: update_fade,
+    });
+
+    $("#compose form").on("submit", function (e) {
+       e.preventDefault();
+       compose.finish();
+    });
+
     resize.watch_manual_resize("#new_message_content");
 
     // Run a feature test and decide whether to display
@@ -745,6 +738,9 @@ $(function () {
 
     $("#compose").on("click", "#attach_files", function (e) {
         e.preventDefault();
+        if (clone_file_input === undefined) {
+            clone_file_input = $('#file_input').clone(true);
+        }
         $("#compose #file_input").trigger("click");
     } );
 
@@ -947,7 +943,7 @@ $(function () {
                 _.extend({}, exports.send_times_data[event.old_id], value);
         }
     });
-});
+};
 
 return exports;
 }());

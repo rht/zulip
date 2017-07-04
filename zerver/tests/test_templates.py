@@ -83,16 +83,14 @@ class TemplateTestCase(ZulipTestCase):
             'zerver/subscriptions.html',
             'zerver/tutorial_finale.html',
             'zerver/message_history.html',
+            'zerver/delete_message.html',
         ]
         unusual = [
-            'zerver/emails/confirm_registration_mit.txt',
-            'zerver/emails/confirm_registration_mit.subject',
-            'zerver/emails/invitation_mit.txt',
-            'zerver/emails/invitation_mit.subject',
             'zerver/emails/confirm_new_email.subject',
             'zerver/emails/confirm_new_email.html',
             'zerver/emails/confirm_new_email.txt',
             'zerver/emails/notify_change_in_email.subject',
+            'zerver/emails/notify_change_in_email.html',
             'zerver/emails/digest.subject',
             'zerver/emails/digest.html',
             'zerver/emails/digest.txt',
@@ -102,6 +100,7 @@ class TemplateTestCase(ZulipTestCase):
             'zerver/emails/followup_day2.subject',
             'zerver/emails/followup_day2.txt',
             'zerver/emails/followup_day2.html',
+            'zerver/emails/password_reset.html',
             'corporate/mit.html',
             'corporate/zephyr.html',
             'corporate/zephyr-mirror.html',
@@ -198,7 +197,6 @@ class TemplateTestCase(ZulipTestCase):
                          "device_ip": "127.0.0.1",
                          "login_time": "9:33am NewYork, NewYork",
                          },
-            zulip_support="zulip-admin@example.com",
         )
 
         context.update(kwargs)

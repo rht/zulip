@@ -19,30 +19,31 @@ missed-message emails, desktop apps, and much more.
 Further information on the Zulip project and its features can be found
 at <https://www.zulip.org>.
 
-[![Build Status](https://travis-ci.org/zulip/zulip.svg?branch=master)](https://travis-ci.org/zulip/zulip) [![Coverage Status](https://coveralls.io/repos/github/zulip/zulip/badge.svg?branch=master)](https://coveralls.io/github/zulip/zulip?branch=master) [![docs](https://readthedocs.org/projects/zulip/badge/?version=latest)](http://zulip.readthedocs.io/en/latest/) [![Zulip chat](https://img.shields.io/badge/zulip-join_chat-brightgreen.svg)](https://chat.zulip.org)
+[![Build Status](https://travis-ci.org/zulip/zulip.svg?branch=master)](https://travis-ci.org/zulip/zulip) [![Coverage Status](https://img.shields.io/codecov/c/github/zulip/zulip.svg)](https://codecov.io/gh/zulip/zulip) [![docs](https://readthedocs.org/projects/zulip/badge/?version=latest)](http://zulip.readthedocs.io/en/latest/) [![Zulip chat](https://img.shields.io/badge/zulip-join_chat-brightgreen.svg)](https://chat.zulip.org) [![Twitter](https://img.shields.io/badge/twitter-@zuliposs-blue.svg?style=flat)](http://twitter.com/zuliposs)
 
 ## Community
 
 There are several places online where folks discuss Zulip.
 
 * The primary place is the
-  [Zulip development community Zulip server](https://zulip.readthedocs.io/en/latest/chat-zulip-org.html).
+  [Zulip development community Zulip server][czo-doc] at
+  chat.zulip.org.
 
 * For Google Summer of Code students and applicants, we have
 [a mailing list](https://groups.google.com/forum/#!forum/zulip-gsoc)
 for help, questions, and announcements.  But it's often simpler to
-visit chat.zulip.org instead.
+[visit chat.zulip.org][czo-doc] instead.
 
-* We have
-[a public mailing list](https://groups.google.com/forum/#!forum/zulip-devel)
-that is currently pretty low traffic because most discussions happen
-in our public Zulip instance.  We use it to announce Zulip developer
-community gatherings and ask for feedback on major technical or design
-decisions.  It has several hundred subscribers, so you can use it to
-ask questions about features or possible bugs, but please don't use it
-ask for generic help getting started as a contributor (e.g. because
-you want to do Google Summer of Code).  The rest of this page covers
-how to get involved in the Zulip project in detail.
+* We have a [public development discussion mailing list][zulip-devel],
+zulip-devel, which is currently pretty low traffic because most
+discussions happen in our public Zulip instance.  We use it to
+announce Zulip developer community gatherings and ask for feedback on
+major technical or design decisions.  It has several hundred
+subscribers, so you can use it to ask questions about features or
+possible bugs, but please don't use it ask for generic help getting
+started as a contributor (e.g. because you want to do Google Summer of
+Code).  The rest of this page covers how to get involved in the Zulip
+project in detail.
 
 * Zulip also has a [blog](https://blog.zulip.org/) and
   [twitter account](https://twitter.com/zuliposs).
@@ -54,6 +55,8 @@ pertaining to bugs or enhancement requests.  We also use Pull Requests
 as our primary mechanism to receive code contributions.
 
 The Zulip community has a [Code of Conduct][code-of-conduct].
+
+[zulip-devel]: https://groups.google.com/forum/#!forum/zulip-devel
 
 ## Installing the Zulip Development environment
 
@@ -104,10 +107,11 @@ relevant list!  Please report any security issues you discover to
 zulip-security@googlegroups.com.
 
 * **App codebases**. This repository is for the Zulip server and web
-app (including most integrations); the
-[React Native Mobile iOS app][ios-exp], [Android app][Android],
+app (including most integrations).  The
+[beta React Native mobile app][mobile], [Java Android app][Android]
+(see [our mobile strategy][mobile-strategy]),
 [new Electron desktop app][electron], and
-[legacy QT-based desktop app][desktop] are all separate repositories.
+[legacy Qt-based desktop app][desktop] are all separate repositories.
 
 * **Glue code**. We maintain a [Hubot adapter][hubot-adapter] and several
 integrations ([Phabricator][phab], [Jenkins][], [Puppet][], [Redmine][],
@@ -122,11 +126,10 @@ contributing!
 
 * **Code Reviews**. Zulip is all about community and helping each
 other out.  Check out [#code review][code-review] on
-[chat.zulip.org](https://zulip.readthedocs.io/en/latest/chat-zulip-org.html)
-to help review PRs and give comments on other people's work. Everyone is
-welcome to participate, even those new to Zulip! Even just checking out
-the code, manually testing it, and posting on whether or not it worked
-is valuable.
+[chat.zulip.org][czo-doc] to help review PRs and give comments on
+other people's work. Everyone is welcome to participate, even those
+new to Zulip! Even just checking out the code, manually testing it,
+and posting on whether or not it worked is valuable.
 
 [cla]: https://opensource.dropbox.com/cla/
 [code-of-conduct]: https://zulip.readthedocs.io/en/latest/code-of-conduct.html
@@ -140,7 +143,8 @@ is valuable.
 [gh-issues]: https://github.com/zulip/zulip/issues
 [desktop]: https://github.com/zulip/zulip-desktop
 [android]: https://github.com/zulip/zulip-android
-[ios-exp]: https://github.com/zulip/zulip-mobile
+[mobile]: https://github.com/zulip/zulip-mobile
+[mobile-strategy]: https://github.com/zulip/zulip-android/blob/master/android-strategy.md
 [email-android]: https://groups.google.com/forum/#!forum/zulip-android
 [email-ios]: https://groups.google.com/forum/#!forum/zulip-ios
 [hubot-adapter]: https://github.com/zulip/hubot-zulip
@@ -161,19 +165,8 @@ is valuable.
 We participated in
 [GSoC](https://developers.google.com/open-source/gsoc/) in 2016 (with
 [great results](https://blog.zulip.org/2016/10/13/static-types-in-python-oh-mypy/))
-and are participating in 2017 as well.  For guidance, please read
-[our GSoC instructions and ideas page](https://github.com/zulip/zulip.github.io/blob/master/gsoc-ideas.md)
-and feel free to email
-[our GSoC mailing list](https://groups.google.com/forum/#!forum/zulip-gsoc).
-
-**Note**: For GSoC 2017, we will be focused on making our
-[React Native app](https://github.com/zulip/zulip-mobile) better
-rather than developing the
-[Java Android app](https://github.com/zulip/zulip-android) and
-[React Native app](https://github.com/zulip/zulip-mobile) in
-parallel. You can review
-[our detailed plan](https://github.com/zulip/zulip-android/blob/master/android-strategy.md)
-for further details on the motivation and logistics.
+and [are participating](https://github.com/zulip/zulip.github.io/blob/master/gsoc-ideas.md)
+in 2017 as well.
 
 ## How to get involved with contributing to Zulip
 
@@ -218,14 +211,12 @@ mind:
   These are great projects if you're looking to make an impact.
 
 Another way to find issues in Zulip is to take advantage of our
-"area:<foo>" convention in separating out issues.  We partition all of
+`area:<foo>` convention in separating out issues.  We partition all of
 our issues into areas like admin, compose, emoji, hotkeys, i18n,
-onboarding, search, etc.  You can see this here:
-
-<https://github.com/zulip/zulip/labels>
-
-Click on any of the "area:" labels and you will see all the tickets
-related to your area of interest.
+onboarding, search, etc.  Look through our
+[list of labels](https://github.com/zulip/zulip/labels), and click on
+some of the `area:` labels to see all the tickets related to your
+areas of interest.
 
 If you're excited about helping with an open issue, make sure to claim
 the issue by commenting the following in the comment section:
@@ -236,11 +227,10 @@ label the issue as **in progress**. For more details, check out
 You're encouraged to ask questions on how to best implement or debug
 your changes -- the Zulip maintainers are excited to answer questions
 to help you stay unblocked and working efficiently. It's great to ask
-questions in comments on GitHub issues and pull requests, or [on
-chat.zulip.org](https://zulip.readthedocs.io/en/latest/chat-zulip-org.html). We'll
-direct longer discussions to Zulip chat, but please post a summary of
-what you learned from the chat, or link to the conversation, in a
-comment on the GitHub issue.
+questions in comments on GitHub issues and pull requests, or
+[on chat.zulip.org][czo-doc].  We'll direct longer discussions to
+Zulip chat, but please post a summary of what you learned from the
+chat, or link to the conversation, in a comment on the GitHub issue.
 
 We also welcome suggestions of features that you feel would be
 valuable or changes that you feel would make Zulip a better open
@@ -258,24 +248,27 @@ responsive so this usually means we missed your message.
 
 For significant changes to the visual design, user experience, data
 model, or architecture, we highly recommend posting a mockup,
-screenshot, or description of what you have in mind to zulip-devel@ to
-get broad feedback before you spend too much time on implementation
-details.
+screenshot, or description of what you have in mind to the
+[#design](https://chat.zulip.org/#narrow/stream/design) stream on
+[chat.zulip.org][czo-doc] to get broad feedback before you spend too
+much time on implementation details.
 
 Finally, before implementing a larger feature, we highly recommend
-looking at the new feature tutorial and coding style guidelines on
-ReadTheDocs.
+looking at the
+[new feature tutorial](http://zulip.readthedocs.io/en/latest/new-feature-tutorial.html)
+and [coding style guidelines](http://zulip.readthedocs.io/en/latest/code-style.html)
+on ReadTheDocs.
 
 Feedback on how to make this development process more efficient, fun,
 and friendly to new contributors is very welcome!  Just send an email
-to the Zulip Developers list with your thoughts.
+to the [zulip-devel](#community) list with your thoughts.
 
 When you feel like you have completed your work on an issue, post your
 PR to the
 [#code review](https://chat.zulip.org/#narrow/stream/code.20review)
-stream on [chat.zulip.org](https://zulip.readthedocs.io/en/latest/chat-zulip-org.html).
-This is our lightweight process that gives other developers the
-opportunity to give you comments and suggestions on your work.
+stream on [chat.zulip.org][czo-doc].  This is our lightweight process
+that gives other developers the opportunity to give you comments and
+suggestions on your work.
 
 ## License
 
@@ -297,3 +290,6 @@ The software includes some works released by third parties under other
 free and open source licenses. Those works are redistributed under the
 license terms under which the works were received. For more details,
 see the ``docs/THIRDPARTY`` file included with this distribution.
+
+
+[czo-doc]: https://zulip.readthedocs.io/en/latest/chat-zulip-org.html

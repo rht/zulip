@@ -31,6 +31,7 @@ from zerver.lib.validator import validate_login_email
 from zerver.models import PreregistrationUser, UserProfile, remote_user_to_email, Realm
 from zerver.views.registration import create_preregistration_user, get_realm_from_request, \
     redirect_and_log_into_subdomain
+from zerver.signals import email_on_new_login
 from zproject.backends import password_auth_enabled, dev_auth_enabled, \
     github_auth_enabled, google_auth_enabled, ldap_auth_enabled
 from version import ZULIP_VERSION
@@ -85,7 +86,7 @@ def redirect_to_subdomain_login_url():
 def login_or_register_remote_user(request, remote_username, user_profile, full_name='',
                                   invalid_subdomain=False, mobile_flow_otp=None,
                                   is_signup=False):
-    # type: (HttpRequest, Text, UserProfile, Text, bool, Optional[str], bool) -> HttpResponse
+    # type: (HttpRequest, Text, Optional[UserProfile], Text, bool, Optional[str], bool) -> HttpResponse
     if invalid_subdomain:
         # Show login page with an error message
         return redirect_to_subdomain_login_url()
@@ -125,6 +126,12 @@ def login_or_register_remote_user(request, remote_username, user_profile, full_n
         # We can't use HttpResponseRedirect, since it only allows HTTP(S) URLs
         response = HttpResponse(status=302)
         response['Location'] = 'zulip://login?' + urllib.parse.urlencode(params)
+        # Maybe sending 'user_logged_in' signal is the better approach:
+        #   user_logged_in.send(sender=user_profile.__class__, request=request, user=user_profile)
+        # Not doing this only because over here we don't add the user information
+        # in the session. If the signal receiver assumes that we do then that
+        # would cause problems.
+        email_on_new_login(sender=user_profile.__class__, request=request, user=user_profile)
         return response
 
     login(request, user_profile)
@@ -424,7 +431,7 @@ def get_dev_users(extra_users_count=10):
 
 def login_page(request, **kwargs):
     # type: (HttpRequest, **Any) -> HttpResponse
-    if request.user.is_authenticated():
+    if request.user.is_authenticated:
         return HttpResponseRedirect("/")
     if is_subdomain_root_or_alias(request) and settings.REALMS_HAVE_SUBDOMAINS:
         redirect_url = reverse('zerver.views.registration.find_my_team')
@@ -501,6 +508,9 @@ def api_dev_fetch_api_key(request, username=REQ()):
     if return_data.get("inactive_user"):
         return json_error(_("Your account has been disabled."),
                           data={"reason": "user disable"}, status=403)
+    if user_profile is None:
+        return json_error(_("This user is not registered."),
+                          data={"reason": "unregistered"}, status=403)
     login(request, user_profile)
     return json_success({"api_key": user_profile.api_key, "email": user_profile.email})
 
@@ -549,6 +559,13 @@ def api_fetch_api_key(request, username=REQ(), password=REQ()):
                               data={"reason": "unregistered"}, status=403)
         return json_error(_("Your username or password is incorrect."),
                           data={"reason": "incorrect_creds"}, status=403)
+
+    # Maybe sending 'user_logged_in' signal is the better approach:
+    #   user_logged_in.send(sender=user_profile.__class__, request=request, user=user_profile)
+    # Not doing this only because over here we don't add the user information
+    # in the session. If the signal receiver assumes that we do then that
+    # would cause problems.
+    email_on_new_login(sender=user_profile.__class__, request=request, user=user_profile)
     return json_success({"api_key": user_profile.api_key, "email": user_profile.email})
 
 def get_auth_backends_data(request):

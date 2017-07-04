@@ -13,7 +13,7 @@ from typing import Any, Dict
 from zerver.lib.test_classes import ZulipTestCase
 from zerver.lib.test_helpers import HostRequestMock
 from zerver.lib.test_runner import slow
-from zerver.models import get_realm, get_stream, get_user_profile_by_email
+from zerver.models import get_realm, get_stream, get_user
 from zerver.views.home import home, sent_time_in_epoch_seconds
 
 class HomeTest(ZulipTestCase):
@@ -146,7 +146,7 @@ class HomeTest(ZulipTestCase):
             "zulip_version",
         ]
 
-        email = "hamlet@zulip.com"
+        email = self.example_email("hamlet")
 
         # Verify fails if logged-out
         result = self.client_get('/')
@@ -180,6 +180,7 @@ class HomeTest(ZulipTestCase):
         realm_bots_expected_keys = [
             'api_key',
             'avatar_url',
+            'bot_type',
             'default_all_public_streams',
             'default_events_register_stream',
             'default_sending_stream',
@@ -258,7 +259,7 @@ class HomeTest(ZulipTestCase):
 
     def test_accept_terms_of_service(self):
         # type: () -> None
-        email = "hamlet@zulip.com"
+        email = self.example_email("hamlet")
         self.login(email)
 
         result = self.client_post('/accounts/accept_terms/')
@@ -271,7 +272,7 @@ class HomeTest(ZulipTestCase):
 
     def test_bad_narrow(self):
         # type: () -> None
-        email = 'hamlet@zulip.com'
+        email = self.example_email("hamlet")
         self.login(email)
         with patch('logging.exception') as mock:
             result = self._get_home_page(stream='Invalid Stream')
@@ -293,7 +294,7 @@ class HomeTest(ZulipTestCase):
 
     def test_topic_narrow(self):
         # type: () -> None
-        email = 'hamlet@zulip.com'
+        email = self.example_email("hamlet")
         self.login(email)
         result = self._get_home_page(stream='Denmark', topic='lunch')
         self._sanity_check(result)
@@ -302,7 +303,7 @@ class HomeTest(ZulipTestCase):
 
     def test_notifications_stream(self):
         # type: () -> None
-        email = 'hamlet@zulip.com'
+        email = self.example_email("hamlet")
         realm = get_realm('zulip')
         realm.notifications_stream = get_stream('Denmark', realm)
         realm.save()
@@ -313,7 +314,8 @@ class HomeTest(ZulipTestCase):
 
     def test_people(self):
         # type: () -> None
-        email = 'hamlet@zulip.com'
+        email = self.example_email('hamlet')
+        realm = get_realm('zulip')
         self.login(email)
         result = self._get_home_page()
         page_params = self._get_page_params(result)
@@ -322,17 +324,17 @@ class HomeTest(ZulipTestCase):
             self.assertTrue(len(users) >= 3)
             for user in users:
                 self.assertEqual(user['user_id'],
-                                 get_user_profile_by_email(user['email']).id)
+                                 get_user(user['email'], realm).id)
 
         cross_bots = page_params['cross_realm_bots']
-        self.assertEqual(len(cross_bots), 2)
+        self.assertEqual(len(cross_bots), 3)
         cross_bots.sort(key=lambda d: d['email'])
 
         notification_bot = self.notification_bot()
 
         self.assertEqual(cross_bots, [
             dict(
-                user_id=get_user_profile_by_email('feedback@zulip.com').id,
+                user_id=get_user('feedback@zulip.com', get_realm('zulip')).id,
                 is_admin=False,
                 email='feedback@zulip.com',
                 full_name='Zulip Feedback Bot',
@@ -345,11 +347,18 @@ class HomeTest(ZulipTestCase):
                 full_name='Notification Bot',
                 is_bot=True
             ),
+            dict(
+                user_id=get_user('welcome-bot@zulip.com', get_realm('zulip')).id,
+                is_admin=False,
+                email='welcome-bot@zulip.com',
+                full_name='Welcome Bot',
+                is_bot=True
+            ),
         ])
 
     def test_new_stream(self):
         # type: () -> None
-        email = 'hamlet@zulip.com'
+        email = self.example_email("hamlet")
         stream_name = 'New stream'
         self.subscribe_to_stream(email, stream_name)
         self.login(email)
@@ -384,7 +393,7 @@ class HomeTest(ZulipTestCase):
 
     def test_desktop_home(self):
         # type: () -> None
-        email = 'hamlet@zulip.com'
+        email = self.example_email("hamlet")
         self.login(email)
         result = self.client_get("/desktop_home")
         self.assertEqual(result.status_code, 301)
@@ -394,9 +403,26 @@ class HomeTest(ZulipTestCase):
         path = urllib.parse.urlparse(result['Location']).path
         self.assertEqual(path, "/")
 
+    def test_apps_view(self):
+        # type: () -> None
+        result = self.client_get('/apps')
+        self.assertEqual(result.status_code, 301)
+        self.assertTrue(result['Location'].endswith('/apps/'))
+
+        with self.settings(ZILENCER_ENABLED=False):
+            result = self.client_get('/apps/')
+        self.assertEqual(result.status_code, 301)
+        self.assertTrue(result['Location'] == 'https://zulipchat.com/apps/')
+
+        with self.settings(ZILENCER_ENABLED=True):
+            result = self.client_get('/apps/')
+        self.assertEqual(result.status_code, 200)
+        html = result.content.decode('utf-8')
+        self.assertIn('Appsolutely', html)
+
     def test_generate_204(self):
         # type: () -> None
-        email = 'hamlet@zulip.com'
+        email = self.example_email("hamlet")
         self.login(email)
         result = self.client_get("/api/v1/generate_204")
         self.assertEqual(result.status_code, 204)
@@ -420,7 +446,7 @@ class HomeTest(ZulipTestCase):
 
     def test_subdomain_homepage(self):
         # type: () -> None
-        email = 'hamlet@zulip.com'
+        email = self.example_email("hamlet")
         self.login(email)
         with self.settings(SUBDOMAINS_HOMEPAGE=True):
             with patch('zerver.views.home.get_subdomain', return_value=""):

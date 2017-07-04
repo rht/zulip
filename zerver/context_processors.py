@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 from django.http import HttpRequest
 from django.conf import settings
 
-from zerver.models import UserProfile, get_realm, get_unique_open_realm, Realm
+from zerver.models import UserProfile, get_realm, get_unique_non_system_realm, Realm
 from zproject.backends import (
     any_oauth_backend_enabled,
     dev_auth_enabled,
@@ -40,7 +40,7 @@ def get_realm_from_request(request):
         subdomain = get_subdomain(request)
         return get_realm(subdomain)
     # This will return None if there is no unique, open realm.
-    return get_unique_open_realm()
+    return get_unique_non_system_realm()
 
 def zulip_default_context(request):
     # type: (HttpRequest) -> Dict[str, Any]
@@ -77,14 +77,16 @@ def zulip_default_context(request):
         about_link_disabled = True
         find_team_link_disabled = False
 
+    apps_page_url = 'https://zulipchat.com/apps/'
+    if settings.ZILENCER_ENABLED:
+        apps_page_url = '/apps/'
+
     return {
         'realms_have_subdomains': settings.REALMS_HAVE_SUBDOMAINS,
         'custom_logo_url': settings.CUSTOM_LOGO_URL,
         'register_link_disabled': register_link_disabled,
         'login_link_disabled': login_link_disabled,
         'about_link_disabled': about_link_disabled,
-        'show_oss_announcement': settings.SHOW_OSS_ANNOUNCEMENT,
-        'zulip_admin': settings.ZULIP_ADMINISTRATOR,
         'terms_of_service': settings.TERMS_OF_SERVICE,
         'privacy_policy': settings.PRIVACY_POLICY,
         'login_url': settings.HOME_NOT_LOGGED_IN,
@@ -100,6 +102,7 @@ def zulip_default_context(request):
         'server_uri': settings.SERVER_URI,
         'api_site_required': settings.EXTERNAL_API_PATH != "api.zulip.com",
         'email_gateway_example': settings.EMAIL_GATEWAY_EXAMPLE,
+        'apps_page_url': apps_page_url,
         'open_realm_creation': settings.OPEN_REALM_CREATION,
         'password_auth_enabled': password_auth_enabled(realm),
         'dev_auth_enabled': dev_auth_enabled(realm),

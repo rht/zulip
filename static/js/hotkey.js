@@ -81,6 +81,7 @@ var keydown_either_mappings = {
 var keypress_mappings = {
     42: {name: 'star_message', message_view_only: true}, // '*'
     43: {name: 'thumbs_up_emoji', message_view_only: true}, // '+'
+    45: {name: 'toggle_message_collapse', message_view_only: true}, // '-'
     47: {name: 'search', message_view_only: false}, // '/'
     58: {name: 'open_reactions', message_view_only: true}, // ':'
     63: {name: 'show_shortcuts', message_view_only: false}, // '?'
@@ -95,7 +96,6 @@ var keypress_mappings = {
     80: {name: 'narrow_private', message_view_only: true}, // 'P'
     82: {name: 'respond_to_author', message_view_only: true}, // 'R'
     83: {name: 'narrow_by_subject', message_view_only: true}, //'S'
-    85: {name: 'keyboard_sub', message_view_only: false}, //'U'
     86: {name: 'view_selected_stream', message_view_only: false}, //'V'
     99: {name: 'compose', message_view_only: true}, // 'c'
     100: {name: 'open_drafts', message_view_only: false}, // 'd'
@@ -107,6 +107,7 @@ var keypress_mappings = {
     113: {name: 'query_users', message_view_only: false}, // 'q'
     114: {name: 'reply_message', message_view_only: true}, // 'r'
     115: {name: 'narrow_by_recipient', message_view_only: true}, // 's'
+    117: {name: 'show_sender_info', message_view_only: true}, // 'u'
     118: {name: 'show_lightbox', message_view_only: true}, // 'v'
     119: {name: 'query_streams', message_view_only: false}, // 'w'
 };
@@ -151,7 +152,7 @@ exports.get_keypress_hotkey = function (e) {
 };
 
 exports.processing_text = function () {
-    var selector = 'input:focus,select:focus,textarea:focus,#compose-send-button:focus';
+    var selector = 'input:focus,select:focus,textarea:focus,#compose-send-button:focus,.editable-section:focus';
     return $(selector).length > 0;
 };
 
@@ -167,8 +168,8 @@ exports.process_escape_key = function (e) {
         return false;
     }
 
-    if (modals.is_active()) {
-        modals.close_active();
+    if (overlays.is_active()) {
+        overlays.close_active();
         return true;
     }
 
@@ -254,7 +255,7 @@ exports.process_enter_key = function (e) {
         if (emoji_picker.is_composition(e.target)) {
             e.target.click();
         } else {
-            reactions.toggle_reaction(current_msg_list.selected_id());
+            emoji_picker.toggle_selected_emoji();
         }
         return true;
     }
@@ -269,13 +270,13 @@ exports.process_enter_key = function (e) {
         return true;
     }
 
-    if (modals.settings_open()) {
+    if (overlays.settings_open()) {
         // On the settings page just let the browser handle
         // the enter key for things like submitting forms.
         return false;
     }
 
-    if (modals.streams_open()) {
+    if (overlays.streams_open()) {
         return false;
     }
 
@@ -320,14 +321,9 @@ exports.process_enter_key = function (e) {
         return true;
     }
 
-    if (current_msg_list.empty()) {
-        return false;
-    }
-
     // If we got this far, then we're presumably in the message
-    // view and there is a "current" message, so in that case
-    // "enter" is the hotkey to respond to a message.  Note that
-    // "r" has same effect, but that is handled in process_hotkey().
+    // view, so in that case "enter" is the hotkey to respond to a message.
+    // Note that "r" has same effect, but that is handled in process_hotkey().
     compose_actions.respond_to_message({trigger: 'hotkey enter'});
     return true;
 };
@@ -417,7 +413,18 @@ exports.process_hotkey = function (e, hotkey) {
             }
     }
 
-    if (modals.settings_open()) {
+    if (hotkey.message_view_only && overlays.is_active()) {
+        if (exports.processing_text()) {
+            return false;
+        }
+        if (event_name === 'narrow_by_subject' && overlays.streams_open()) {
+            subs.keyboard_sub();
+            return true;
+        }
+        return false;
+    }
+
+    if (overlays.settings_open()) {
         if (exports.processing_text()) {
             return false;
         }
@@ -433,18 +440,14 @@ exports.process_hotkey = function (e, hotkey) {
     }
 
     if (emoji_picker.reactions_popped()) {
-        return reactions.reaction_navigate(e, event_name);
+        return emoji_picker.navigate(e, event_name);
     }
 
-    if (modals.info_overlay_open()) {
+    if (overlays.info_overlay_open()) {
         return false;
     }
 
-    if (hotkey.message_view_only && modals.is_active()) {
-        return false;
-    }
-
-    if ((event_name === 'up_arrow' || event_name === 'down_arrow') && modals.streams_open()) {
+    if ((event_name === 'up_arrow' || event_name === 'down_arrow') && overlays.streams_open()) {
         return subs.switch_rows(event_name);
     }
 
@@ -510,10 +513,10 @@ exports.process_hotkey = function (e, hotkey) {
     }
 
     if (event_name === 'left_arrow') {
-        if (modals.lightbox_open()) {
+        if (overlays.lightbox_open()) {
             lightbox.prev();
             return true;
-        } else if (modals.streams_open()) {
+        } else if (overlays.streams_open()) {
             subs.toggle_view(event_name);
             return true;
         }
@@ -523,10 +526,10 @@ exports.process_hotkey = function (e, hotkey) {
     }
 
     if (event_name === 'right_arrow') {
-        if (modals.lightbox_open()) {
+        if (overlays.lightbox_open()) {
             lightbox.next();
             return true;
-        } else if (modals.streams_open()) {
+        } else if (overlays.streams_open()) {
             subs.toggle_view(event_name);
             return true;
         }
@@ -542,6 +545,7 @@ exports.process_hotkey = function (e, hotkey) {
             return true;
         case 'narrow_private':
             return do_narrow_action(function (target, opts) {
+                opts = _.defaults({}, opts, {select_first_unread: true});
                 narrow.by('is', 'private', opts);
             });
         case 'query_streams':
@@ -557,7 +561,7 @@ exports.process_hotkey = function (e, hotkey) {
             gear_menu.open();
             return true;
         case 'show_shortcuts': // Show keyboard shortcuts page
-            ui.show_info_overlay("keyboard-shortcuts");
+            ui.maybe_show_keyboard_shortcuts();
             return true;
         case 'stream_cycle_backward':
             navigate.cycle_stream('backward');
@@ -565,18 +569,13 @@ exports.process_hotkey = function (e, hotkey) {
         case 'stream_cycle_forward':
             navigate.cycle_stream('forward');
             return true;
-        case 'keyboard_sub':
-            if (modals.streams_open()) {
-                subs.keyboard_sub();
-            }
-            return true;
         case 'view_selected_stream':
-            if (modals.streams_open()) {
+            if (overlays.streams_open()) {
                 subs.view_stream();
             }
             return true;
         case 'n_key':
-            if (modals.streams_open()) {
+            if (overlays.streams_open()) {
                 subs.new_stream_clicked();
             } else {
                 narrow.narrow_to_next_topic();
@@ -585,9 +584,19 @@ exports.process_hotkey = function (e, hotkey) {
         case 'open_drafts':
             drafts.toggle();
             return true;
+        case 'reply_message': // 'r': respond to message
+            // Note that you can "enter" to respond to messages as well,
+            // but that is handled in process_enter_key().
+            compose_actions.respond_to_message({trigger: 'hotkey'});
+            return true;
     }
 
     if (current_msg_list.empty()) {
+        return false;
+    }
+
+    // Prevent navigation in the background when the overlays are active.
+    if (overlays.is_active()) {
         return false;
     }
 
@@ -631,11 +640,6 @@ exports.process_hotkey = function (e, hotkey) {
             return do_narrow_action(narrow.by_recipient);
         case 'narrow_by_subject':
             return do_narrow_action(narrow.by_subject);
-        case 'reply_message': // 'r': respond to message
-            // Note that you can "enter" to respond to messages as well,
-            // but that is handled in process_enter_key().
-            compose_actions.respond_to_message({trigger: 'hotkey'});
-            return true;
         case 'respond_to_author': // 'R': respond to author
             compose_actions.respond_to_message({reply_type: "personal", trigger: 'hotkey pm'});
             return true;
@@ -645,14 +649,20 @@ exports.process_hotkey = function (e, hotkey) {
         case 'show_lightbox':
             lightbox.show_from_selected_message();
             return true;
+        case 'show_sender_info':
+            popovers.show_sender_info();
+            return true;
         case 'open_reactions': // ':': open reactions to message
             open_reactions();
             return true;
         case 'thumbs_up_emoji': // '+': reacts with thumbs up emoji on selected message
-            reactions.toggle_reaction(msg.id, '+1');
+            reactions.toggle_emoji_reaction(msg.id, '+1');
             return true;
         case 'toggle_mute':
             muting_ui.toggle_mute(msg);
+            return true;
+        case 'toggle_message_collapse':
+            condense.toggle_collapse(msg);
             return true;
     }
 

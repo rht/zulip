@@ -1,11 +1,13 @@
 var common = require('../casper_lib/common.js').common;
 var test_credentials = require('../../var/casper/test_credentials.js').test_credentials;
 var REALMS_HAVE_SUBDOMAINS = casper.cli.get('subdomains');
+var OUTGOING_WEBHOOK_BOT_TYPE = '3';
 
 common.start_and_log_in();
 
 var form_sel = 'form[action^="/json/settings/change"]';
 var regex_zuliprc = /^data:application\/octet-stream;charset=utf-8,\[api\]\nemail=.+\nkey=.+\nsite=.+\n$/;
+var regex_flaskbotrc = /^data:application\/octet-stream;charset=utf-8,\[.\]\nemail=.+\nkey=.+\nsite=.+\n$/;
 
 casper.then(function () {
     var menu_selector = '#settings-dropdown';
@@ -55,8 +57,6 @@ casper.then(function () {
 casper.then(function () {
     casper.waitUntilVisible('#account-settings-status', function () {
         casper.test.assertSelectorHasText('#account-settings-status', 'Updated settings!');
-
-        casper.click('[data-section="your-bots"]');
         casper.click('#api_key_button');
     });
 });
@@ -99,12 +99,20 @@ casper.then(function () {
     });
 });
 
+casper.then(function () {
+    casper.waitUntilVisible('#account-settings-status', function () {
+        casper.click('[data-section="your-bots"]');
+    });
+});
+
 casper.then(function create_bot() {
     casper.test.info('Filling out the create bot form');
 
     casper.fill('#create_bot_form',{
         bot_name: 'Bot 1',
         bot_short_name: '1',
+        bot_type: OUTGOING_WEBHOOK_BOT_TYPE,
+        payload_url: 'http://hostname.example.com/bots/followup',
     });
 
     casper.test.info('Submitting the create bot form');
@@ -129,6 +137,19 @@ casper.then(function () {
                 decodeURIComponent(casper.getElementsAttribute(button_sel, 'href')),
                 regex_zuliprc,
                 'Looks like a bot ~/.zuliprc file');
+        });
+    });
+});
+
+casper.then(function () {
+    casper.waitUntilVisible('#download_flaskbotrc', function () {
+        casper.click("#download_flaskbotrc");
+
+        casper.waitUntilVisible('#download_flaskbotrc[href^="data:application"]', function () {
+            casper.test.assertMatch(
+                decodeURIComponent(casper.getElementsAttribute('#download_flaskbotrc', 'href')),
+                regex_flaskbotrc,
+                'Looks like a flaskbotrc file');
         });
     });
 });
@@ -160,39 +181,75 @@ casper.then(function () {
     });
 });
 
-/*
-   This test needs a modification. As it stands now, it will cause a race
-   condition with all subsequent tests which access the UserProfile object
-   this test modifies. Currently, if we modify alert words, we don't get
-   any notification from the server, issue reported at
-   https://github.com/zulip/zulip/issues/1269. Consequently, we can't wait
-   on any condition to avoid the race condition.
+casper.then(function () {
+    casper.click('[data-section="alert-words"]');
+    casper.waitUntilVisible('#create_alert_word_form', function () {
+        casper.test.info('Attempting to submit an empty alert word');
+        casper.click('#create_alert_word_button');
+        casper.waitUntilVisible('#alert_word_status', function () {
+            casper.test.info('Checking that an error is displayed');
+            casper.test.assertSelectorHasText('.alert_word_status_text', 'Alert word can\'t be empty!');
+            casper.test.info('Closing the error message');
+            casper.click('.close-alert-word-status');
+            casper.test.info('Checking the error is hidden');
+            casper.test.assertNotVisible('#alert_word_status');
+        });
+    });
+});
 
-casper.waitUntilVisible('#create_alert_word_form', function () {
-    casper.test.info('Attempting to submit an empty alert word');
-    casper.click('#create_alert_word_button');
-    casper.test.info('Checking that an error is displayed');
-    casper.test.assertVisible('#empty_alert_word_error');
-
-    casper.test.info('Closing the error message');
-    casper.click('.close-empty-alert-word-error');
-    casper.test.info('Checking the error is hidden');
-    casper.test.assertNotVisible('#empty_alert_word_error');
-
+casper.then(function () {
     casper.test.info('Filling out the alert word input');
     casper.sendKeys('#create_alert_word_name', 'some phrase');
     casper.click('#create_alert_word_button');
-
-    casper.test.info('Checking that an element was created');
-    casper.test.assertExists('div.alert-word-information-box');
-    casper.test.assertSelectorHasText('span.value', 'some phrase');
-
-    casper.test.info('Deleting element');
-    casper.click('button.remove-alert-word');
-    casper.test.info('Checking that the element was deleted');
-    casper.test.assertDoesntExist('div.alert-word-information-box');
+    casper.test.info('Checking that a success message is displayed');
+    casper.waitUntilVisible('#alert_word_status', function () {
+        casper.test.assertSelectorHasText('.alert_word_status_text', 'Alert word added successfully!');
+        casper.test.info('Closing the status message');
+        casper.click('.close-alert-word-status');
+        casper.test.info('Checking the status message is hidden');
+        casper.test.assertNotVisible('#alert_word_status');
+    });
 });
-*/
+
+casper.then(function () {
+    casper.test.info('Checking that an element was created');
+    casper.waitUntilVisible(".alert-word-item[data-word='some phrase']", function () {
+        casper.test.assertExists('div.alert-word-information-box');
+        casper.test.assertSelectorHasText('span.value', 'some phrase');
+    });
+});
+
+casper.then(function () {
+    casper.test.info('Trying to create a duplicate alert word');
+    casper.sendKeys('#create_alert_word_name', 'some phrase');
+    casper.click('#create_alert_word_button');
+    casper.test.info('Checking that an error message is displayed');
+    casper.waitUntilVisible('#alert_word_status', function () {
+        casper.test.assertSelectorHasText('.alert_word_status_text', 'Alert word already exists!');
+        casper.test.info('Closing the status message');
+        casper.click('.close-alert-word-status');
+        casper.test.info('Checking the status message is hidden');
+        casper.test.assertNotVisible('#alert_word_status');
+    });
+});
+
+casper.then(function () {
+    casper.test.info('Deleting alert word');
+    casper.click('button.remove-alert-word');
+    casper.test.info('Checking that a success message is displayed');
+    casper.waitUntilVisible('#alert_word_status', function () {
+        casper.test.assertSelectorHasText('.alert_word_status_text', 'Alert word removed successfully!');
+        casper.test.info('Closing the status message');
+        casper.click('.close-alert-word-status');
+        casper.test.info('Checking the status message is hidden');
+        casper.test.assertNotVisible('#alert_word_status');
+    });
+    casper.test.info('Checking that the element was deleted');
+    casper.waitWhileVisible(".alert-word-item[data-word='some phrase']", function () {
+        casper.test.assertDoesntExist('div.alert-word-information-box');
+        casper.test.info('Element deleted successfully');
+    });
+});
 
 casper.then(function change_default_language() {
     casper.test.info('Changing the default language');

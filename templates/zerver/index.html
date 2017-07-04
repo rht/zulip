@@ -37,13 +37,9 @@ var page_params = {{ page_params }};
 {% endif %}
 {{ minified_js('app')|safe }}
 
-{% if not pipeline %}
-<script type="text/javascript" src="/webpack/bundle.js"></script>
-{% endif %}
+{{ render_bundle('translations') }}
 
-{% if debug %}
-{{ minified_js('app_debug')|safe }}
-{% endif %}
+{{ render_bundle('katex') }}
 
 {% include "zerver/topic_is_muted.html" %}
 
@@ -60,7 +56,7 @@ var page_params = {{ page_params }};
 <div id="right-screen" class="screen"></div>
 <div id="clear-screen" class="screen"></div>
 
-<div id="settings_overlay_container" class="overlay" data-overlay="settings">
+<div id="settings_overlay_container" class="overlay" data-overlay="settings" aria-hidden="true">
   {% include "zerver/settings_overlay.html" %}
 </div>
 {% include "zerver/navbar.html" %}
@@ -147,7 +143,7 @@ var page_params = {{ page_params }};
     {% include "zerver/subscriptions.html" %}
     {% include "zerver/drafts.html" %}
 </div><!--/row-->
-    <div class="informational-overlays overlay new-style" data-overlay="informationalOverlays">
+    <div class="informational-overlays overlay new-style" data-overlay="informationalOverlays" aria-hidden="true">
         <div class="overlay-content">
             <div class="overlay-tabs">
                 <button class="button no-style exit">&times;</button>

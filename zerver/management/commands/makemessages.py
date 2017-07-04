@@ -41,8 +41,8 @@ from six.moves import filter
 from six.moves import map
 from six.moves import zip
 
+import django
 from django.core.management.commands import makemessages
-from django.utils.translation import trans_real
 from django.template.base import BLOCK_TAG_START, BLOCK_TAG_END
 from django.conf import settings
 
@@ -105,27 +105,34 @@ class Command(makemessages.Command):
 
     def handle_django_locales(self, *args, **options):
         # type: (*Any, **Any) -> None
-        old_endblock_re = trans_real.endblock_re
-        old_block_re = trans_real.block_re
-        old_constant_re = trans_real.constant_re
+        if django.VERSION > (1, 11):
+            from django.utils.translation import template
+            re_module = template
+        else:
+            from django.utils.translation import trans_real
+            re_module = trans_real
 
-        old_templatize = trans_real.templatize
+        old_endblock_re = re_module.endblock_re
+        old_block_re = re_module.block_re
+        old_constant_re = re_module.constant_re
+
+        old_templatize = re_module.templatize
         # Extend the regular expressions that are used to detect
         # translation blocks with an "OR jinja-syntax" clause.
-        trans_real.endblock_re = re.compile(
-            trans_real.endblock_re.pattern + '|' + r"""^-?\s*endtrans\s*-?$""")
-        trans_real.block_re = re.compile(
-            trans_real.block_re.pattern + '|' + r"""^-?\s*trans(?:\s+(?!'|")(?=.*?=.*?)|\s*-?$)""")
-        trans_real.plural_re = re.compile(
-            trans_real.plural_re.pattern + '|' + r"""^-?\s*pluralize(?:\s+.+|-?$)""")
-        trans_real.constant_re = re.compile(r"""_\(((?:".*?")|(?:'.*?')).*\)""")
+        re_module.endblock_re = re.compile(
+            re_module.endblock_re.pattern + '|' + r"""^-?\s*endtrans\s*-?$""")
+        re_module.block_re = re.compile(
+            re_module.block_re.pattern + '|' + r"""^-?\s*trans(?:\s+(?!'|")(?=.*?=.*?)|\s*-?$)""")
+        re_module.plural_re = re.compile(
+            re_module.plural_re.pattern + '|' + r"""^-?\s*pluralize(?:\s+.+|-?$)""")
+        re_module.constant_re = re.compile(r"""_\(((?:".*?")|(?:'.*?')).*\)""")
 
-        def my_templatize(src, origin=None):
-            # type: (Text, Optional[Text]) -> Text
+        def my_templatize(src, *args, **kwargs):
+            # type: (Text, *Any, **Any) -> Text
             new_src = strip_whitespaces(src)
-            return old_templatize(new_src, origin)
+            return old_templatize(new_src, *args, **kwargs)
 
-        trans_real.templatize = my_templatize
+        re_module.templatize = my_templatize
 
         try:
             ignore_patterns = options.get('ignore_patterns', [])
@@ -133,15 +140,15 @@ class Command(makemessages.Command):
             options['ignore_patterns'] = ignore_patterns
             super(Command, self).handle(*args, **options)
         finally:
-            trans_real.endblock_re = old_endblock_re
-            trans_real.block_re = old_block_re
-            trans_real.templatize = old_templatize
-            trans_real.constant_re = old_constant_re
+            re_module.endblock_re = old_endblock_re
+            re_module.block_re = old_block_re
+            re_module.templatize = old_templatize
+            re_module.constant_re = old_constant_re
 
     def extract_strings(self, data):
         # type: (str) -> Dict[str, str]
         data = self.ignore_javascript_comments(data)
-        translation_strings = {} # type: Dict[str, str]
+        translation_strings = {}  # type: Dict[str, str]
         for regex in frontend_compiled_regexes:
             for match in regex.findall(data):
                 match = match.strip()
@@ -162,7 +169,7 @@ class Command(makemessages.Command):
 
     def get_translation_strings(self):
         # type: () -> Dict[str, str]
-        translation_strings = {} # type: Dict[str, str]
+        translation_strings = {}  # type: Dict[str, str]
         dirname = self.get_template_dir()
 
         for dirpath, dirnames, filenames in os.walk(dirname):
@@ -226,7 +233,7 @@ class Command(makemessages.Command):
         Missing strings are removed, new strings are added and already
         translated strings are not touched.
         """
-        new_strings = {} # Dict[str, str]
+        new_strings = {}  # Dict[str, str]
         for k in translation_strings:
             k = k.replace('\\n', '\n')
             new_strings[k] = old_strings.get(k, k)

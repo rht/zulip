@@ -65,18 +65,19 @@ function same_recipient(a, b) {
 
 function add_display_time(group, message_container, prev) {
     var time = new XDate(message_container.msg.timestamp * 1000);
+    var today = new XDate();
 
     if (prev !== undefined) {
         var prev_time = new XDate(prev.msg.timestamp * 1000);
         if (time.toDateString() !== prev_time.toDateString()) {
             // NB: show_date is HTML, inserted into the document without escaping.
-            group.show_date = (timerender.render_date(time, prev_time))[0].outerHTML;
+            group.show_date = (timerender.render_date(time, prev_time, today))[0].outerHTML;
             group.show_date_separator = true;
         }
     } else {
         // Show the date in the recipient bar, but not a date separator bar.
         group.show_date_separator = false;
-        group.show_date = (timerender.render_date(time))[0].outerHTML;
+        group.show_date = (timerender.render_date(time, undefined, today))[0].outerHTML;
     }
 
     if (message_container.timestr === undefined) {
@@ -116,7 +117,8 @@ function populate_group_from_message_container(group, message_container) {
     group.subject_links = message_container.msg.subject_links;
 
     var time = new XDate(message_container.msg.timestamp * 1000);
-    var date_element = timerender.render_date(time)[0];
+    var today = new XDate();
+    var date_element = timerender.render_date(time, undefined, today)[0];
 
     group.date = date_element.outerHTML;
 }
@@ -132,8 +134,9 @@ MessageListView.prototype = {
         if (message_container.msg.last_edit_timestamp !== undefined) {
             // Add or update the last_edit_timestr
             var last_edit_time = new XDate(message_container.msg.last_edit_timestamp * 1000);
+            var today = new XDate();
             message_container.last_edit_timestr =
-                (timerender.render_date(last_edit_time))[0].textContent
+                (timerender.render_date(last_edit_time, undefined, today))[0].textContent
                 + " at " + stringify_time(last_edit_time);
         }
     },
@@ -286,8 +289,8 @@ MessageListView.prototype = {
         // Add a subscription marker
         } else if (this.list !== home_msg_list &&
                    last_msg_container.msg.historical !== first_msg_container.msg.historical) {
-            first_group.bookend_bottom = true;
-            this.add_subscription_marker(first_group, last_msg_container, first_msg_container);
+            second_group.bookend_top = true;
+            this.add_subscription_marker(second_group, last_msg_container, first_msg_container);
         }
         return false;
     },
@@ -365,6 +368,11 @@ MessageListView.prototype = {
                     // Clear the date if it is the same as the last group
                     delete second_group.show_date;
                     delete second_group.show_date_separator;
+                } else {
+                    // If we just sent the first message on a new day
+                    // in a narrow, make sure we render a date separator.
+                    add_display_time(second_group, first_msg_container,
+                                     last_msg_container);
                 }
             }
             message_actions.append_groups = new_message_groups;
@@ -447,7 +455,15 @@ MessageListView.prototype = {
         // all messages lists. To prevent having both list views overwriting
         // each others data we will make a new message object to add data to
         // for rendering.
-        message_containers = _.map(messages, function (message) { return {msg: message}; });
+        message_containers = _.map(messages, function (message) {
+            if (message.starred) {
+                message.starred_status = i18n.t("Unstar");
+            } else {
+                message.starred_status = i18n.t("Star");
+            }
+
+            return {msg: message};
+        });
 
         function save_scroll_position() {
             if (orig_scrolltop_offset === undefined && self.selected_row().length > 0) {
@@ -926,10 +942,10 @@ MessageListView.prototype = {
     },
 
     render_trailing_bookend: function MessageListView_render_trailing_bookend(
-                                trailing_bookend_content, subscribed) {
+                                trailing_bookend_content, subscribed, show_button) {
         var rendered_trailing_bookend = $(templates.render('bookend', {
             bookend_content: trailing_bookend_content,
-            trailing: true,
+            trailing: show_button,
             subscribed: subscribed,
         }));
         rows.get_table(this.table_name).append(rendered_trailing_bookend);

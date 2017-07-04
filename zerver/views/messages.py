@@ -21,7 +21,7 @@ from zerver.lib import bugdown
 from zerver.lib.actions import recipient_for_emails, do_update_message_flags, \
     compute_mit_user_fullname, compute_irc_user_fullname, compute_jabber_user_fullname, \
     create_mirror_user_if_needed, check_send_message, do_update_message, \
-    extract_recipients, truncate_body, render_incoming_message
+    extract_recipients, truncate_body, render_incoming_message, do_delete_message
 from zerver.lib.queue import queue_json_publish
 from zerver.lib.cache import (
     generic_bulk_cached_fetch,
@@ -75,6 +75,27 @@ ConditionTransform = Any  # TODO: should be Callable[[ColumnElement], ColumnElem
 
 # When you add a new operator to this, also update zerver/lib/narrow.py
 class NarrowBuilder(object):
+    '''
+    Build up a SQLAlchemy query to find messages matching a narrow.
+    '''
+
+    # This class has an important security invariant:
+    #
+    #   None of these methods ever *add* messages to a query's result.
+    #
+    # That is, the `add_term` method, and its helpers the `by_*` methods,
+    # are passed a Query object representing a query for messages; they may
+    # call some methods on it, and then they return a resulting Query
+    # object.  Things these methods may do to the queries they handle
+    # include
+    #  * add conditions to filter out rows (i.e., messages), with `query.where`
+    #  * add columns for more information on the same message, with `query.column`
+    #  * add a join for more information on the same message
+    #
+    # Things they may not do include
+    #  * anything that would pull in additional rows, or information on
+    #    other messages.
+
     def __init__(self, user_profile, msg_id_column):
         # type: (UserProfile, str) -> None
         self.user_profile = user_profile
@@ -82,6 +103,17 @@ class NarrowBuilder(object):
 
     def add_term(self, query, term):
         # type: (Query, Dict[str, Any]) -> Query
+        """
+        Extend the given query to one narrowed by the given term, and return the result.
+
+        This method satisfies an important security property: the returned
+        query never includes a message that the given query didn't.  In
+        particular, if the given query will only find messages that a given
+        user can legitimately see, then so will the returned query.
+        """
+        # To maintain the security property, we hold all the `by_*`
+        # methods to the same criterion.  See the class's block comment
+        # for details.
 
         # We have to be careful here because we're letting users call a method
         # by name! The prefix 'by_' prevents it from colliding with builtin
@@ -124,6 +156,7 @@ class NarrowBuilder(object):
     def by_is(self, query, operand, maybe_negate):
         # type: (Query, str, ConditionTransform) -> Query
         if operand == 'private':
+            # The `.select_from` method extends the query with a join.
             query = query.select_from(join(query.froms[0], table("zerver_recipient"),
                                            column("recipient_id") ==
                                            literal_column("zerver_recipient.id")))
@@ -132,6 +165,9 @@ class NarrowBuilder(object):
             return query.where(maybe_negate(cond))
         elif operand == 'starred':
             cond = column("flags").op("&")(UserMessage.flags.starred.mask) != 0
+            return query.where(maybe_negate(cond))
+        elif operand == 'unread':
+            cond = column("flags").op("&")(UserMessage.flags.read.mask) == 0
             return query.where(maybe_negate(cond))
         elif operand == 'mentioned' or operand == 'alerted':
             cond = column("flags").op("&")(UserMessage.flags.mentioned.mask) != 0
@@ -169,8 +205,16 @@ class NarrowBuilder(object):
             raise BadNarrowOperator('unknown stream ' + operand)
 
         if self.user_profile.realm.is_zephyr_mirror_realm:
-            # MIT users expect narrowing to "social" to also show messages to /^(un)*social(.d)*$/
-            # (unsocial, ununsocial, social.d, etc)
+            # MIT users expect narrowing to "social" to also show messages to
+            # /^(un)*social(.d)*$/ (unsocial, ununsocial, social.d, ...).
+
+            # In `ok_to_include_history`, we assume that a non-negated
+            # `stream` term for a public stream will limit the query to
+            # that specific stream.  So it would be a bug to hit this
+            # codepath after relying on this term there.  But all streams in
+            # a Zephyr realm are private, so that doesn't happen.
+            assert(not stream.is_public())
+
             m = re.search(r'^(?:un)*(.+?)(?:\.d)*$', stream.name, re.IGNORECASE)
             # Since the regex has a `.+` in it and "" is invalid as a
             # stream name, this will always match
@@ -258,7 +302,8 @@ class NarrowBuilder(object):
         if ',' in operand:
             # Huddle
             try:
-                emails = [e.strip() for e in operand.split(',')]
+                # Ignore our own email if it is in this list
+                emails = [e.strip() for e in operand.split(',') if e.strip() != self.user_profile.email]
                 recipient = recipient_for_emails(emails, False,
                                                  self.user_profile, self.user_profile)
             except ValidationError:
@@ -547,14 +592,22 @@ def get_messages_backend(request, user_profile,
     include_history = ok_to_include_history(narrow, user_profile.realm)
 
     if include_history and not use_first_unread_anchor:
+        # The initial query in this case doesn't use `zerver_usermessage`,
+        # and isn't yet limited to messages the user is entitled to see!
+        #
+        # This is OK only because we've made sure this is a narrow that
+        # will cause us to limit the query appropriately later.
+        # See `ok_to_include_history` for details.
         query = select([column("id").label("message_id")], None, table("zerver_message"))
         inner_msg_id_col = literal_column("zerver_message.id")
     elif narrow is None and not use_first_unread_anchor:
+        # This is limited to messages the user received, as recorded in `zerver_usermessage`.
         query = select([column("message_id"), column("flags")],
                        column("user_profile_id") == literal(user_profile.id),
                        table("zerver_usermessage"))
         inner_msg_id_col = column("message_id")
     else:
+        # This is limited to messages the user received, as recorded in `zerver_usermessage`.
         # TODO: Don't do this join if we're not doing a search
         query = select([column("message_id"), column("flags")],
                        column("user_profile_id") == literal(user_profile.id),
@@ -1071,6 +1124,16 @@ def update_message_backend(request, user_profile,
         queue_json_publish('embed_links', event_data, lambda x: None)
     return json_success()
 
+
+@has_request_variables
+def delete_message_backend(request, user_profile, message_id=REQ(converter=to_non_negative_int)):
+    # type: (HttpRequest, UserProfile, int) -> HttpResponse
+    message, ignored_user_message = access_message(user_profile, message_id)
+    if not user_profile.is_realm_admin:
+        raise JsonableError(_("You don't have permission to edit this message"))
+    do_delete_message(user_profile, message)
+    return json_success()
+
 @has_request_variables
 def json_fetch_raw_message(request, user_profile,
                            message_id=REQ(converter=to_non_negative_int)):
@@ -1100,13 +1163,8 @@ def messages_in_narrow_backend(request, user_profile,
                                narrow = REQ(converter=narrow_parameter)):
     # type: (HttpRequest, UserProfile, List[int], Optional[List[Dict[str, Any]]]) -> HttpResponse
 
-    # Note that this function will only work on messages the user
-    # actually received
-
-    # TODO: We assume that the narrow is a search.  For now this works because
-    # the browser only ever calls this function for searches, since it can't
-    # apply that narrow operator itself.
-
+    # This query is limited to messages the user has access to because they
+    # actually received them, as reflected in `zerver_usermessage`.
     query = select([column("message_id"), column("subject"), column("rendered_content")],
                    and_(column("user_profile_id") == literal(user_profile.id),
                         column("message_id").in_(msg_ids)),

@@ -27,8 +27,7 @@
         var page_params = {debug_mode: false};
         </script>
         {% endblock %}
-        {{ minified_js('common')|safe }}
-        {{ minified_js('katex')|safe }}
+        {{ render_bundle('common') }}
         {% block customhead %}
         {% endblock %}
     </head>

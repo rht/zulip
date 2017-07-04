@@ -37,6 +37,7 @@ class DocPageTest(ZulipTestCase):
             self._test('/apps/', 'Appsolutely')
             self._test('/features/', 'Talk about multiple topics at once')
             self._test('/hello/', 'productive group chat')
+            self._test('/for/open-source/', 'for open source projects')
             self._test('/integrations/',
                        'require creating a Zulip bot',
                        extra_strings=[
@@ -46,6 +47,10 @@ class DocPageTest(ZulipTestCase):
                            "https://my.pingdom.com/reports/integration/settings",
                        ])
             self._test('/devlogin/', 'Normal users')
+            self._test('/devtools/', 'Useful development URLs')
+            self._test('/errors/404/', 'Page not found')
+            self._test('/errors/5xx/', 'Internal server error')
+            self._test('/emails/', 'Road Runner invited you to join Zulip')
             self._test('/register/', 'Sign up for Zulip')
 
             result = self.client_get('/new-user/')

@@ -83,8 +83,7 @@ exports.activate = function (raw_operators, opts) {
     opts = _.defaults({}, opts, {
         then_select_id: home_msg_list.selected_id(),
         select_first_unread: false,
-        first_unread_from_server: false,
-        from_reload: false,
+        use_initial_narrow_pointer: false,
         change_hash: true,
         trigger: 'unknown',
     });
@@ -97,7 +96,7 @@ exports.activate = function (raw_operators, opts) {
         opts.select_first_unread = false;
     }
 
-    if (opts.then_select_id === -1 && !opts.first_unread_from_server) {
+    if (opts.then_select_id === -1 && !opts.use_initial_narrow_pointer) {
         // According to old comments, this shouldn't happen anymore
         blueslip.warn("Setting then_select_id to page_params.pointer.");
         opts.then_select_id = page_params.pointer;
@@ -135,10 +134,10 @@ exports.activate = function (raw_operators, opts) {
         current_msg_list.pre_narrow_offset = current_msg_list.selected_row().offset().top;
     }
 
-    if (opts.first_unread_from_server && opts.from_reload) {
+    if (opts.use_initial_narrow_pointer) {
         then_select_id = page_params.initial_narrow_pointer;
         then_select_offset = page_params.initial_narrow_offset;
-        opts.first_unread_from_server = false;
+        opts.use_initial_narrow_pointer = false;
         opts.select_first_unread = false;
         home_msg_list.pre_narrow_offset = page_params.initial_offset;
     }
@@ -196,6 +195,7 @@ exports.activate = function (raw_operators, opts) {
                 // narrowing
                 message_viewport.set_message_offset(then_select_offset);
             }
+            unread_ops.process_visible();
         }
     }
 
@@ -215,7 +215,7 @@ exports.activate = function (raw_operators, opts) {
         num_before: 50,
         num_after: 50,
         msg_list: message_list.narrowed,
-        use_first_unread_anchor: opts.first_unread_from_server,
+        use_first_unread_anchor: opts.use_initial_narrow_pointer,
         cont: function () {
             ui.hide_loading_more_messages_indicator();
             if (defer_selecting_closest) {
@@ -282,7 +282,7 @@ exports.stream_topic = function () {
 exports.narrow_to_next_topic = function () {
     var curr_info = exports.stream_topic();
 
-    if (!curr_info || !curr_info.stream) {
+    if (!curr_info) {
         return;
     }
 
@@ -304,7 +304,7 @@ exports.narrow_to_next_topic = function () {
         select_first_unread: true,
     };
 
-    narrow.activate(filter_expr, opts);
+    exports.activate(filter_expr, opts);
 };
 
 
@@ -446,7 +446,7 @@ exports.restore_home_state = function () {
     // If we click on the Home link from another nav pane, just go
     // back to the state you were in (possibly still narrowed) before
     // you left the Home pane.
-    if (!modals.is_active()) {
+    if (!overlays.is_active()) {
         exports.deactivate();
     }
     navigate.maybe_scroll_to_selected();
@@ -478,6 +478,9 @@ function pick_empty_narrow_banner() {
         } else if (first_operand === "private") {
             // You have no private messages.
             return $("#empty_narrow_all_private_message");
+        } else if (first_operand === "unread") {
+            // You have no unread messages.
+            return $("#no_unread_narrow_message");
         }
     } else if ((first_operator === "stream") && !stream_data.is_subscribed(first_operand)) {
         // You are narrowed to a stream to which you aren't subscribed.
@@ -561,8 +564,14 @@ exports.by_conversation_and_time_uri = function (message, is_absolute_url) {
             "/subject/" + hash_util.encodeHashComponent(message.subject) +
             "/near/" + hash_util.encodeHashComponent(message.id);
     }
+
+    // Include your own email in this URI if it's not there already
+    var all_emails = message.reply_to;
+    if (all_emails.indexOf(people.my_current_email()) === -1) {
+        all_emails += "," + people.my_current_email();
+    }
     return absolute_url + "#narrow/pm-with/" +
-        hash_util.encodeHashComponent(message.reply_to) +
+        hash_util.encodeHashComponent(all_emails) +
         "/near/" + hash_util.encodeHashComponent(message.id);
 };
 

@@ -120,11 +120,11 @@ exports.initialize = function () {
         },
     });
 
-    modals.open_overlay({
+    overlays.open_overlay({
         name: 'invite',
         overlay: $('#invite-user'),
         on_close: function () {
-            hashchange.exit_modal();
+            hashchange.exit_overlay();
         },
     });
 };

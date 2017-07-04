@@ -16,7 +16,6 @@ TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(os.path.dirname(TOOLS_DIR))
 
 exclude_common = """
-api/integrations/basecamp/zulip_basecamp_config.py
 api/integrations/codebase/zulip_codebase_config.py
 api/integrations/git/zulip_git_config.py
 api/integrations/perforce/git_p4.py
@@ -28,15 +27,15 @@ zproject/settings.py
 zproject/test_settings.py
 """.split()
 
-# We don't run mypy on contrib_bots, since the code there will
+# We don't run mypy on api/bots since the code there will
 # often be shared with other projects that do not want a mypy
 # dependency (at least while it's still kind of beta).
-exclude_common += ['contrib_bots']
+exclude_common += ['api/bots']
 
-exclude_py2 = [] # type: List[str]
+exclude_py2 = []  # type: List[str]
 
 exclude_py3 = """
-bots/process_ccache
+api/integrations/zephyr/process_ccache
 """.split()
 
 parser = argparse.ArgumentParser(description="Run mypy on files tracked by git.")
@@ -73,7 +72,7 @@ else:
     py_version = 2
 
 if args.all:
-    exclude = [] # type: List[str]
+    exclude = []  # type: List[str]
 if py_version == 2:
     exclude = exclude_common + exclude_py2
 else:
@@ -121,7 +120,7 @@ if args.quick:
 if python_files:
     rc = subprocess.call([mypy_command] + extra_args + python_files)
     if args.linecoverage_report:
-        # Move the coverage report to where coveralls will look for it.
+        # Move the coverage report to where codecov will look for it.
         try:
             os.rename('var/linecoverage-report/coverage.txt', 'var/.coverage')
         except OSError:

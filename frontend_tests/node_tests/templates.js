@@ -119,6 +119,28 @@ function render(template_name, args) {
     global.write_handlebars_output("admin-realm-domains-list", html);
 }());
 
+(function admin_realm_dropdown_stream_list() {
+    var html = "<ul>";
+    var args = {
+        stream: {
+            name: "Italy",
+            subscriber_count: 9,
+            stream_id: 18,
+        },
+    };
+    html += render("admin-realm-dropdown-stream-list", args);
+    html += "</ul>";
+
+    var link = $(html).find("a");
+    var list_item = $(html).find("li");
+
+    assert.equal(link.text().trim(), "Italy");
+    assert(list_item.hasClass("stream_name"));
+    assert.equal(list_item.attr("data-stream-id"), "18");
+
+    global.write_handlebars_output("admin-realm-dropdown-stream-list", html);
+}());
+
 (function admin_default_streams_list() {
     var html = '<table>';
     var streams = ['devel', 'trac', 'zulip'];
@@ -298,16 +320,42 @@ function render(template_name, args) {
 (function alert_word_settings_item() {
     var html = '<ul id="alert-words">';
     var words = ['lunch', 'support'];
+    var args;
     _.each(words, function (word) {
-        var args = {
+        args = {
             word: word,
         };
         html += render('alert_word_settings_item', args);
     });
+    args = {
+        word: '',
+        editing: true,
+    };
+    html += render('alert_word_settings_item', args);
     html += "</ul>";
     global.write_handlebars_output("alert_word_settings_item", html);
+
     var li = $(html).find("li.alert-word-item:first");
+    var value = li.find('.value');
+    var button = li.find('button');
     assert.equal(li.attr('data-word'),'lunch');
+    assert.equal(value.length, 1);
+    assert.equal(value.text(), 'lunch');
+    assert.equal(button.attr('title'), 'Delete alert word');
+    assert.equal(button.attr('data-word'),'lunch');
+
+    var title = $(html).find('.new-alert-word-section-title');
+    var textbox = $(html).find('#create_alert_word_name');
+    button = $(html).find('#create_alert_word_button');
+    assert.equal(title.length, 1);
+    assert.equal(title.text().trim(), 'Add a new alert word');
+    assert.equal(textbox.length, 1);
+    assert.equal(textbox.attr('maxlength'), 100);
+    assert.equal(textbox.attr('placeholder'), 'Alert word');
+    assert.equal(textbox.attr('class'), 'required');
+    assert.equal(button.length, 1);
+    assert.equal(button.text().trim(), 'Add alert word');
+
 }());
 
 (function announce_stream_docs() {
@@ -587,6 +635,7 @@ function render(template_name, args) {
             content: 'This is message one.',
             last_edit_timestr: '11:00',
             starred: true,
+            starred_status: "Unstar",
         },
     };
 
@@ -648,7 +697,7 @@ function render(template_name, args) {
             is_stream: true,
             message_ids: [1, 2],
             message_containers: messages,
-            show_date: '"<span id="timerender82">Jan&nbsp;07</span>"',
+            show_date: '"<span class="timerender82">Jan&nbsp;07</span>"',
             show_date_separator: true,
             subject: 'two messages',
             match_subject: '<span class="highlight">two</span> messages',
@@ -675,7 +724,10 @@ function render(template_name, args) {
         content: "Let's go to lunch!",
         edit_history: [
             {
-                body_to_render: "<p>Let's go to <span class='highlight_text_replaced'>dinner</span>!</p>",
+                body_to_render: "<p>Let's go to " +
+                                    "<span class='highlight_text_deleted'>lunch</span>" +
+                                    "<span class='highlight_text_inserted'>dinner</span>" +
+                                "!</p>",
                 timestamp: 1468132659,
                 edited_by: 'Alice',
                 posted_or_edited: "Edited by",
@@ -688,7 +740,7 @@ function render(template_name, args) {
     global.write_test_output("message_edit_history.handlebars", html);
     var edited_message = $(html).find("div.messagebox-content");
     assert.equal(edited_message.text().trim(),
-                "1468132659\n            Let's go to dinner!\n            Edited by Alice");
+                "1468132659\n                Let's go to lunchdinner!\n                Edited by Alice");
 }());
 
 (function message_reaction() {
@@ -807,6 +859,10 @@ function render(template_name, args) {
     var html = '';
     html += render('sidebar_private_message_list', args);
 
+    var conversations = $(html).find('a').text().trim().split('\n');
+    assert.equal(conversations[0], 'alice,bob');
+    assert.equal(conversations[1].trim(), '(more conversations)');
+
     global.write_handlebars_output("sidebar_private_message_list", html);
 }());
 
@@ -867,9 +923,6 @@ function render(template_name, args) {
     var html = '<ul id="stream_filters">';
     html += render('stream_sidebar_row', args);
     html += '</ul>';
-
-    // because it won't mark the template as read otherwise.
-    render('stream_privacy');
 
     global.write_handlebars_output("stream_sidebar_row", html);
 
@@ -1050,6 +1103,23 @@ function render(template_name, args) {
         html = render(tutorial, args);
         global.write_handlebars_output(tutorial, html);
     });
+}());
+
+(function typeahead_list_item() {
+    var args = {
+        primary: 'primary-text',
+        secondary: 'secondary-text',
+        img_src: 'https://zulip.org',
+        has_image: true,
+        has_secondary: true,
+    };
+
+    var html = '<div>' + render('typeahead_list_item', args) + '</div>';
+    global.write_handlebars_output('typeahead_list_item', html);
+
+    assert.equal($(html).find('.emoji').attr('src'), 'https://zulip.org');
+    assert.equal($(html).find('strong').text().trim(), 'primary-text');
+    assert.equal($(html).find('small').text().trim(), 'secondary-text');
 }());
 
 (function typing_notifications() {

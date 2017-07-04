@@ -123,7 +123,7 @@ exports.initialize = function () {
 // For web pages, the initial favicon is the same as the favicon we
 // set for no unread messages and the initial page title is the same
 // as the page title we set for no unread messages.  However, for the
-// OS X app, the dock icon does not get its badge updated on initial
+// macOS app, the dock icon does not get its badge updated on initial
 // page load.  If the badge icon was wrong right before a reload and
 // we actually have no unread messages then we will never execute
 // bridge.updateCount() until the unread count changes.  Therefore,
@@ -367,6 +367,14 @@ function process_notification(notification) {
                     iconUrl: people.small_avatar_url(message),
                     tag: message.id,
                 });
+                notification_object.onclick = function () {
+                    // We don't need to bring the browser window into focus explicitly
+                    // by calling `window.focus()` as well as don't need to clear the
+                    // notification since it is the default behavior in Firefox.
+                    if (feature_flags.clicking_notification_causes_narrow) {
+                        narrow.by_subject(message.id, {trigger: 'notification'});
+                    }
+                };
             } else {
                 in_browser_notify(message, title, content, raw_operators, opts);
             }

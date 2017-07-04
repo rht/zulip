@@ -128,7 +128,20 @@ exports.restore_draft = function (draft_id) {
                               draft_copy);
     }
 
-    modals.close_modal("drafts");
+    if (draft.type === "stream") {
+        if (draft.stream !== "") {
+            narrow.activate([{operator: "stream", operand: draft.stream},
+                             {operator: "topic", operand: draft.subject}],
+                             {select_first_unread: true, trigger: "restore draft"});
+        }
+    } else {
+        if (draft.private_message_recipient !== "") {
+            narrow.activate([{operator: "pm-with", operand: draft.private_message_recipient}],
+                             {select_first_unread: true, trigger: "restore draft"});
+        }
+    }
+
+    overlays.close_overlay("drafts");
     compose_fade.clear_compose();
     if (draft.type === "stream" && draft.stream === "") {
         draft_copy.subject = "";
@@ -354,7 +367,7 @@ exports.drafts_handle_events = function (e, event_key) {
 
 exports.toggle = function () {
     if (exports.drafts_overlay_open()) {
-        modals.close_modal("drafts");
+        overlays.close_overlay("drafts");
     } else {
         exports.launch();
     }
@@ -362,11 +375,11 @@ exports.toggle = function () {
 
 exports.launch = function () {
     exports.setup_page(function () {
-        modals.open_overlay({
+        overlays.open_overlay({
             name: 'drafts',
             overlay: $('#draft_overlay'),
             on_close: function () {
-                hashchange.exit_modal();
+                hashchange.exit_overlay();
             },
         });
 
@@ -383,14 +396,13 @@ exports.launch = function () {
     });
 };
 
-$(function () {
-
+exports.initialize = function () {
     window.addEventListener("beforeunload", function () {
         exports.update_draft();
     });
 
     $("#new_message_content").focusout(exports.update_draft);
-});
+};
 
 return exports;
 

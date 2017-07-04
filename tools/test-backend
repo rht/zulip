@@ -14,7 +14,6 @@ import ujson
 from lib import sanity_check
 sanity_check.check_venv(__file__)
 
-import coverage
 import django
 from django.conf import settings
 from django.test.utils import get_runner
@@ -147,7 +146,7 @@ if __name__ == "__main__":
     parser.add_option('--coverage', dest='coverage',
                       action="store_true",
                       default=False,
-                      help='Compute test coverage. Enforces processes=1.')
+                      help='Compute test coverage.')
     parser.add_option('--verbose-coverage', dest='verbose_coverage',
                       action="store_true",
                       default=False, help='Enable verbose print of coverage report.')
@@ -237,7 +236,7 @@ if __name__ == "__main__":
             classname = suite.rsplit('.', 1)[0]
             rewrite_arguments(classname)
         elif suite[0].isupper():
-            rewrite_arguments(suite)
+            rewrite_arguments('class %s(' % (suite,))
 
     for suite in args:
         if suite.startswith('test'):
@@ -273,15 +272,9 @@ if __name__ == "__main__":
             sys.exit(1)
 
     if options.coverage:
-        settings.TEST_RUNNER = 'zerver.lib.test_runner.CoverageRunner'
-        cov = coverage.Coverage(config_file="tools/coveragerc", data_suffix=True)
-        cov.erase()
-        # We run coverage here in the main process to get covrage over imports
-        # but we also collect coverage in test_runner.run_subsuite. Each
-        # coverage instance writes its own stats to disk and we merge them at
-        # the end of the test run.
+        import coverage
+        cov = coverage.Coverage(config_file="tools/coveragerc", concurrency='multiprocessing')
         cov.start()
-
     if options.profile:
         import cProfile
         prof = cProfile.Profile()
@@ -300,6 +293,8 @@ if __name__ == "__main__":
         generate_fixtures_command = [os.path.join(TOOLS_DIR, 'setup', 'generate-fixtures')]
         generate_fixtures_command.append('--force')
         subprocess.call(generate_fixtures_command)
+
+    subprocess.check_call(['tools/webpack', '--test'])
 
     if options.processes is None:
         options.processes = 4
@@ -333,6 +328,8 @@ if __name__ == "__main__":
         cov.stop()
         cov.save()
         cov.combine()
+        cov.data_suffix = False  # Disable suffix so that filename is .coverage
+        cov.save()
         if options.verbose_coverage:
             print("Printing coverage data")
             cov.report(show_missing=False)
