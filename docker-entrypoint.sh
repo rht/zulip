@@ -320,6 +320,7 @@ zulipFirstStartInit() {
     fi
     local RETURN_CODE=0
     set +e
+    "$ZULIP_PATH"/scripts/setup/postgres-init-db
     su zulip -c /home/zulip/deployments/current/scripts/setup/initialize-database
     RETURN_CODE=$?
     if [[ $RETURN_CODE != 0 ]]; then
@@ -362,10 +363,9 @@ runPostSetupScripts() {
 bootstrappingEnvironment() {
     echo "=== Begin Bootstrap Phase ==="
     waitingForDatabase
-    "$ZULIP_PATH"/scripts/setup/postgres-init-db
-    "$ZULIP_PATH"/scripts/setup/configure-rabbitmq
     userCreationConfiguration
     zulipFirstStartInit
+    "$ZULIP_PATH"/scripts/setup/configure-rabbitmq
     runPostSetupScripts
     echo "=== End Bootstrap Phase ==="
 }
