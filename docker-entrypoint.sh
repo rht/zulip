@@ -281,6 +281,13 @@ initialConfiguration() {
     configureCerts
     databaseConfiguration
     if [ "$MANUAL_CONFIGURATION" = "False" ] || [ "$MANUAL_CONFIGURATION" = "false" ]; then
+        echo $ZULIP_SETTINGS > $ZULIP_DATA/zulip_settings.json
+        cat >> $SETTINGS_PY <<EOF
+import json
+config_data = json.load(open('$ZULIP_DATA/zulip_settings.json', 'r'))
+for name, val in six.iteritems(config_data):
+    vars()[name] = val
+EOF
         secretsConfiguration
         authenticationBackends
         zulipConfiguration
