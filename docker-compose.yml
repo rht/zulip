@@ -39,16 +39,19 @@ zulip:
     SETTING_REDIS_HOST: "redis"
     SECRETS_email_password: "123456789"
     SECRETS_rabbitmq_password: "zulip"
-    ZULIP_AUTH_BACKENDS: "EmailAuthBackend"
-    SETTING_EXTERNAL_HOST: "example.com"
-    SETTING_ZULIP_ADMINISTRATOR: "admin@example.com"
-    SETTING_ADMIN_DOMAIN: "example.com"
-    SETTING_NOREPLY_EMAIL_ADDRESS: "noreply@example.com"
-    SETTING_DEFAULT_FROM_EMAIL: "Zulip <noreply@example.com>"
-    SETTING_EMAIL_HOST: "smtp.example.com"
-    SETTING_EMAIL_HOST_USER: "noreply@example.com"
-    ZULIP_USER_EMAIL: "example@example.com"
-    ZULIP_USER_PASS: "zulip"
-    ZULIP_USER_DOMAIN: "example.com"
+    ZULIP_SETTINGS: >
+      {
+      "ZULIP_AUTH_BACKENDS": ["EmailAuthBackend"],
+      "EXTERNAL_HOST": "example.com",
+      "ZULIP_ADMINISTRATOR": "admin@example.com",
+      "ADMIN_DOMAIN": "example.com",
+      "NOREPLY_EMAIL_ADDRESS": "noreply@example.com",
+      "DEFAULT_FROM_EMAIL": "Zulip <noreply@example.com>",
+      "EMAIL_HOST": "smtp.example.com",
+      "EMAIL_HOST_USER": "noreply@example.com",
+      "ZULIP_USER_EMAIL": "example@example.com",
+      "ZULIP_USER_PASS": "zulip",
+      "ZULIP_USER_DOMAIN": "example.com"
+      }
   volumes:
     - "/opt/docker/zulip/zulip:/data:rw"
