@@ -3,12 +3,16 @@ MAINTAINER Alexander Trost <galexrt@googlemail.com>
 
 ENV ZULIP_VERSION="1.6.0" DATA_DIR="/data"
 
+COPY custom_zulip_files/ /root/custom_zulip
+
 RUN apt-get -q update && \
     apt-get -q dist-upgrade -y && \
     mkdir -p "$DATA_DIR" /root/zulip && \
     wget -q "https://www.zulip.org/dist/releases/zulip-server-$ZULIP_VERSION.tar.gz" -O /tmp/zulip-server.tar.gz && \
     tar xfz /tmp/zulip-server.tar.gz -C /root/zulip --strip-components=1 && \
     rm -rf /tmp/zulip-server.tar.gz && \
+    cp -rf /root/custom_zulip/* /root/zulip && \
+    rm -rf /root/custom_zulip && \
     export PUPPET_CLASSES="zulip::dockervoyager" DEPLOYMENT_TYPE="dockervoyager" \
         ADDITIONAL_PACKAGES="python-dev python-six" has_nginx="0" has_appserver="0" && \
     /root/zulip/scripts/setup/install && \
