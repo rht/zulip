@@ -21,7 +21,7 @@ redis:
   volumes:
     - "/opt/docker/zulip/redis:/var/lib/redis:rw"
 zulip:
-  image: "quay.io/galexrt/docker-zulip:1.6.0"
+  image: "quay.io/galexrt/docker-zulip:latest"
   ports:
     - "8080:80"
     - "8443:443"
