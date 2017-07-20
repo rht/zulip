@@ -3,3 +3,15 @@ set -e
 set -x
 
 sudo ./tools/travis/production-helper
+
+sudo su -c '/bin/bash -s' <<EOF
+echo -e "[machine]\npuppet_classes =
+zulip::voyager,zulip::static_asset_compiler\ndeploy_type = voyager\n[deployment]\ngit_repo_url = https://github.com/rht/zulip.git" > /etc/zulip/zulip.conf
+EOF
+# rm -r /usr/local/bin/node /usr/local/nvm
+sudo chown -R zulip:zulip /srv/zulip-npm-cache
+ls -lhtr /srv/zulip-npm-cache
+sudo /home/zulip/deployments/current/scripts/upgrade-zulip-from-git dev-py3-021
+echo "Upgrade Zulip from Git successful!"
+
+
