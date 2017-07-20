@@ -3,3 +3,27 @@ set -e
 set -x
 
 sudo ./tools/travis/production-helper
+
+sudo su -c '/bin/bash -s' <<EOF
+echo -e "[machine]\npuppet_classes =
+zulip::voyager,zulip::static_asset_compiler\ndeploy_type = voyager\n[deployment]\ngit_repo_url = https://github.com/rht/zulip.git" > /etc/zulip/zulip.conf
+EOF
+# rm -r /usr/local/bin/node /usr/local/nvm
+# sudo chown -R zulip:zulip /srv/zulip-npm-cache
+# sudo chown -R zulip:zulip /srv/zulip-emoji-cache
+mkdir -p /home/travis/zulip-emoji-cache
+sudo chown -R zulip:zulip /home/travis/zulip-emoji-cache
+#sudo chmod a+w /home/travis/zulip-emoji-cache
+sudo env TRAVIS=1 /home/zulip/deployments/current/scripts/upgrade-zulip-from-git pep484
+
+echo "DEBUG: printing Zulip server's error log:"
+cat /var/log/zulip/errors.log
+echo
+echo "DEBUG: printing Zulip server's workers log:"
+cat /var/log/zulip/workers.log
+echo
+echo "DEBUG: printing Zulip server's tornado log:"
+cat /var/log/zulip/tornado.log
+echo "Upgrade Zulip from Git successful!"
+
+
