@@ -66,3 +66,4 @@ zulip.kdev4
 
 ## Miscellaneous
 # (Ideally this section is empty.)
+docker-compose*.yaml
