@@ -24,7 +24,6 @@ Some titles have been shortened for organizational purposes.
 
 *Blog* - [Free Code Camp blog][]
 
-[Free Code Camp blog]: https://medium.freecodecamp.com
 
 *Blog* - [Idle Words talks transcripts][]
 
@@ -218,7 +217,6 @@ You may want to take a look first at our [Git and GitHub guide][].
 
 [Free Code Camp][]
 
-[Free Code Camp]: https://www.freecodecamp.com
 
 ## Massive Open Online Courses (MOOC) Platforms
 

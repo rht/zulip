@@ -3,3 +3,7 @@ set -e
 set -x
 
 sudo ./tools/travis/production-helper
+
+echo "check memory usage"
+wget https://raw.githubusercontent.com/pixelb/ps_mem/master/ps_mem.py
+sudo python ps_mem.py

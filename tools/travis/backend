@@ -8,7 +8,9 @@ source tools/travis/activate-venv
 
 set -e
 set -x
-
+echo "check memory usage"
+wget https://raw.githubusercontent.com/pixelb/ps_mem/master/ps_mem.py
+sudo python ps_mem.py
 ./tools/lint --pep8 # Include the slow and thus non-default pep8 linter check
 ./tools/test-tools
 ./tools/test-backend --coverage
@@ -22,3 +24,5 @@ set -x
 python -W ignore tools/check-capitalization
 # Some test suites disabled in CI for being flaky
 #./tools/test-queue-worker-reload
+
+

@@ -76,8 +76,8 @@ If we look in [zproject/urls.py](https://github.com/zulip/zulip/blob/master/zpro
 `i18n_urls`. These urls show up in the address bar of the browser, and
 serve HTML.
 
-For example, the `/hello` page (preview [here](https://zulip.com/hello/))
-gets translated in Chinese at `zh-cn/hello/` (preview [here](https://zulip.com/zh-cn/hello/)).
+For example, the `/hello` page (preview)
+gets translated in Chinese at `zh-cn/hello/` (preview).
 
 Note the `zh-cn` prefix--that url pattern gets added by `i18n_patterns`.
 

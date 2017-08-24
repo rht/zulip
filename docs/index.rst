@@ -123,7 +123,6 @@ Contents:
    events-system
    queuing
    bots-guide
-   custom-apps
    pointer
    markdown
    realms
