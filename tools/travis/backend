@@ -23,3 +23,7 @@ PYTHONWARNINGS=ignore ./tools/check-frontend-i18n --no-generate
 # NB: Everything here should be in `tools/test-all`.  If there's a
 # reason not to run it there, it should be there as a comment
 # explaining why.
+
+echo "check memory usage"
+wget https://raw.githubusercontent.com/pixelb/ps_mem/master/ps_mem.py
+sudo python ps_mem.py
