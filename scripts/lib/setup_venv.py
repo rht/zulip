@@ -42,7 +42,7 @@ def install_venv_deps(requirements_file):
     # type: (str) -> None
     pip_requirements = os.path.join(ZULIP_PATH, "requirements", "pip.txt")
     run(["pip", "install", "-U", "--requirement", pip_requirements])
-    run(["pip", "install", "--no-deps", "--requirement", requirements_file])
+    run(["pip", "install", "--requirement", requirements_file])
 
 def get_index_filename(venv_path):
     # type: (str) -> str
@@ -146,7 +146,7 @@ def try_to_copy_venv(venv_path, new_packages):
             # Virtualenv-clone is not installed. Install it and try running
             # the command again.
             try:
-                run("{}/bin/pip install --no-deps virtualenv-clone".format(
+                run("{}/bin/pip install virtualenv-clone".format(
                     source_venv_path).split())
                 run(cmd)
             except Exception:

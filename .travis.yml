@@ -51,7 +51,7 @@ matrix:
       env: TEST_SUITE=backend
     - python: "3.4"
       env: TEST_SUITE=production
-    - python: "3.5"
+    - python: "pypy3"
       env: TEST_SUITE=backend
 sudo: required
 addons:
