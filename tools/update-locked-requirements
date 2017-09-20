@@ -40,5 +40,5 @@ EOF
     ) | sponge "$output"
 }
 
-compile_requirements requirements/prod.txt requirements/prod_lock.txt
-compile_requirements requirements/dev.txt requirements/dev_lock.txt
+compile_requirements requirements/prod.txt.in requirements/prod.txt
+compile_requirements requirements/dev.txt.in requirements/dev.txt

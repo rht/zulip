@@ -1,5 +1,5 @@
 # After editing this file, you MUST afterward run
-# /tools/update-locked-requirements to update requirements/dev_lock.txt.
+# /tools/update-locked-requirements to update requirements/dev.txt.
 # See requirements/README.md for more detail.
 six==1.10.0
 -e git+https://github.com/python/mypy.git@d96b2cf22216a4ad6aa55a5726ee35a3fa38c637#egg=mypy==0.530-dev
