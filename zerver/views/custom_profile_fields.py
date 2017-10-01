@@ -19,8 +19,7 @@ from zerver.lib.validator import check_dict, check_list, check_int
 from zerver.models import (custom_profile_fields_for_realm, UserProfile,
                            CustomProfileField, custom_profile_fields_for_realm)
 
-def list_realm_custom_profile_fields(request, user_profile):
-    # type: (HttpRequest, UserProfile) -> HttpResponse
+def list_realm_custom_profile_fields(request: HttpRequest, user_profile: UserProfile) -> HttpResponse:
     fields = custom_profile_fields_for_realm(user_profile.realm_id)
     return json_success({'custom_fields': [f.as_dict() for f in fields]})
 
@@ -46,8 +45,7 @@ def create_realm_custom_profile_field(request, user_profile, name=REQ(),
         return json_error(_("A field with that name already exists."))
 
 @require_realm_admin
-def delete_realm_custom_profile_field(request, user_profile, field_id):
-    # type: (HttpRequest, UserProfile, int) -> HttpResponse
+def delete_realm_custom_profile_field(request: HttpRequest, user_profile: UserProfile, field_id: int) -> HttpResponse:
     try:
         field = CustomProfileField.objects.get(id=field_id)
     except CustomProfileField.DoesNotExist:
