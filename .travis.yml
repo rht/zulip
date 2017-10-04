@@ -1,9 +1,11 @@
 # See https://zulip.readthedocs.io/en/latest/events-system.html for
 # high-level documentation on our Travis CI setup.
-dist: trusty
+dist: xenial
 install:
   # Install moreutils so we can use `ts` and `mispipe` in the following.
   - sudo ./tools/travis/install-moreutils
+
+  - sudo echo "[Plugin]\nplugin_directory = /usr/lib/python3/dist-packages/google_compute_engine/boto" > /etc/boto.cfg
 
   # Disable Travis CI's built-in NVM installation
   - mispipe "mv ~/.nvm ~/.travis-nvm-disabled" ts
@@ -55,6 +57,12 @@ matrix:
       env: TEST_SUITE=backend
 sudo: required
 addons:
+  apt:
+    sources:
+      - universe
+      - multiverse
+    packages:
+      - python3-boto
   artifacts:
     paths:
       # Casper debugging data (screenshots, etc.) is super useful for
