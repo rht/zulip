@@ -1406,7 +1406,12 @@ def do_import_realm(import_dir: Path) -> None:
     convert_to_id_fields(data, 'zerver_realm', 'notifications_stream')
     fix_datetime_fields(data, 'zerver_realm')
     fix_realm_authentication_bitfield(data, 'zerver_realm', 'authentication_methods')
-    realm = Realm(**data['zerver_realm'][0])
+    import traceback
+    try:
+        realm = Realm(**data['zerver_realm'][0])
+    except:
+        traceback.print_exc()
+        print(data['zerver_realm'][0])
     if realm.notifications_stream_id is not None:
         notifications_stream_id = int(realm.notifications_stream_id)  # type: Optional[int]
     else:
