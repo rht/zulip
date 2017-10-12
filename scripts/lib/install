@@ -83,6 +83,7 @@ fi
 
 "$ZULIP_PATH"/scripts/lib/install-node
 
+sudo puppet resource service NAME ensure=running enable=true
 # puppet apply
 mkdir -p /etc/zulip
 (
