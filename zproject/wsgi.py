@@ -15,12 +15,28 @@ framework.
 """
 import os
 import sys
+import ast
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_DIR)
 import scripts.lib.setup_path_on_import
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "zproject.settings")
+
+# check if settings file has valid Python syntax
+from django.conf import settings
+settings_path = "/etc/zulip/settings.py"
+if settings.DEVELOPMENT:
+    settings_path = "zproject/dev_settings.py"
+with open(settings_path, 'r') as settings_file:
+    try:
+        ast.parse(settings_file.read())
+    except SyntaxError:  # nocoverage
+        print("The settings file has invalid Python syntax.")  # nocoverage
+        with open('/var/log/zulip/workers.log', 'a') as logfile:  # nocoverage
+            logfile.write("\nThe settings file has invalid Python syntax.")  # nocoverage
+        exit(1)  # nocoverage
+
 import django
 django.setup()  # We need to call setup to load applications.
 
