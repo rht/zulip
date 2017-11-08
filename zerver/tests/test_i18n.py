@@ -8,7 +8,7 @@ from django.test import TestCase
 from django.utils import translation
 from django.conf import settings
 from django.http import HttpResponse
-from six.moves.http_cookies import SimpleCookie
+from http.cookies import SimpleCookie
 
 from zerver.lib.test_classes import (
     ZulipTestCase,
