@@ -195,6 +195,7 @@ class ClientDescriptor:
             self._timeout_handle = None
             # All clients get heartbeat events
             self.add_event(dict(type='heartbeat'))
+        tornado.ioloop.IOLoop.configure('tornado.platform.asyncio.AsyncIOLoop')
         ioloop = tornado.ioloop.IOLoop.instance()
         interval = HEARTBEAT_MIN_FREQ_SECS + random.randint(0, 10)
         if self.client_type_name != 'API: heartbeat test':
@@ -211,6 +212,7 @@ class ClientDescriptor:
         self.current_handler_id = None
         self.current_client_name = None
         if self._timeout_handle is not None:
+            tornado.ioloop.IOLoop.configure('tornado.platform.asyncio.AsyncIOLoop')
             ioloop = tornado.ioloop.IOLoop.instance()
             ioloop.remove_timeout(self._timeout_handle)
             self._timeout_handle = None
@@ -475,6 +477,7 @@ def setup_event_queue() -> None:
         pass
 
     # Set up event queue garbage collection
+    tornado.ioloop.IOLoop.configure('tornado.platform.asyncio.AsyncIOLoop')
     ioloop = tornado.ioloop.IOLoop.instance()
     pc = tornado.ioloop.PeriodicCallback(gc_event_queues,
                                          EVENT_QUEUE_GC_FREQ_MSECS, ioloop)
