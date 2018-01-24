@@ -7,6 +7,7 @@ import os
 import subprocess
 import argparse
 import sys
+import json
 
 # We need settings so we can figure out where the prod-static directory is.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -91,10 +92,35 @@ for css_file in CSS_FILES:
 subprocess.check_call(['./manage.py', 'collectstatic', '--no-default-ignore',
                        '--noinput', '-i', 'assets', '-i' 'node_modules'],
                       stdout=fp, stderr=fp)
+staticfiles_path = 'prod-static/serve/staticfiles.json'
 if not settings.PRODUCTION:
     # When building a release tarball, we need to move staticfiles.json
     subprocess.check_call(['mv', 'prod-static/serve/staticfiles.json', 'staticfiles.json'],
                           stdout=fp, stderr=fp)
+
+    staticfiles_path = 'staticfiles.json'
+
+# Update the paths of katex.js and zxcvbn.js to their webpack-bundles
+# version
+with open(staticfiles_path) as staticfiles_json:
+    staticfiles = json.load(staticfiles_json)
+    for k in staticfiles:
+        if 'webpack-bundles/katex-' in k and k.endswith('.js'):
+            katex_path = staticfiles[k]
+            break
+        elif 'webpack-bundles/zxcvbn-' in k and k.endswith('.js'):
+            zxcvbn_path = staticfiles[k]
+            break
+    subprocess.check_call(["sed", "-i", "-e",
+                           "'s|/home/zulip/prod-static/min/katex.js|"
+                           "/home/zulip/prod-static/%s|g'"
+                           % katex_path, "static/third/katex/cli.js"],
+                          stdout=fp, stderr=fp)
+    subprocess.check_call(["sed", "-i", "-e",
+                           "'s|/static/min/zxcvbn.js|/static/%s|g'"
+                           % zxcvbn_path, "static/js/settings_account.js"],
+                          stdout=fp, stderr=fp)
+
 
 # Compile translation strings to generate `.mo` files.
 subprocess.check_call(['./manage.py', 'compilemessages'],
