@@ -1,4 +1,5 @@
 # -*- mode: ruby -*-
+# vi:filetype=ruby
 
 VAGRANTFILE_API_VERSION = "2"
 
