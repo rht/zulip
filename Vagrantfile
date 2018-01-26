@@ -12,6 +12,7 @@ if Vagrant::VERSION == "1.8.7"
   path = `which curl`
   if path.include?('/opt/vagrant/embedded/bin/curl')
     puts "In Vagrant 1.8.7 on macOS, curl is broken. Please use Vagrant 2.0.2 "\
+         "or use the latest version "\
          "or run 'sudo rm -f /opt/vagrant/embedded/bin/curl' to fix the "\
          "issue before provisioning. See "\
          "https://github.com/mitchellh/vagrant/issues/7997 "\
@@ -21,6 +22,7 @@ if Vagrant::VERSION == "1.8.7"
   if Vagrant::Util::Platform.windows? and
      path.include?('/c/HashiCorp/Vagrant/embedded')  # Powershell or Cygwin or Git Bash
     puts "In Vagrant 1.8.7 on Windows, curl is broken. Please use Vagrant 2.0.2 "\
+         "or use the latest version "\
          "or run 'sudo rm -f /cygdrive/c/HashiCorp/Vagrant/embedded/bin/curl.exe' "\
          "if you are on Cygwin or run "\
          "'sudo rm -f /c/HashiCorp/Vagrant/embedded/mingw64/bin/curl.exe' "\
