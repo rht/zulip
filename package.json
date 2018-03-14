@@ -24,7 +24,7 @@
     "moment": "2.18.1",
     "moment-timezone": "0.5.12",
     "perfect-scrollbar": "0.7.1",
-    "plotly.js": "1.19.2",
+    "plotly.js": "1.35.0",
     "script-loader": "0.7.0",
     "source-map-loader": "0.2.1",
     "string.prototype.codepointat": "0.2.0",
