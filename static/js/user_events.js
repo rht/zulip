@@ -36,6 +36,9 @@ exports.update_person = function update(person) {
         activity.redraw();
         message_live_update.update_user_full_name(person.user_id, person.full_name);
         pm_list.update_private_messages();
+        if (people.is_my_user_id(person.user_id)) {
+            settings_account.update_full_name(person.full_name);
+        }
     }
 
     if (_.has(person, 'is_admin')) {
@@ -55,10 +58,14 @@ exports.update_person = function update(person) {
             page_params.avatar_source = person.avatar_source;
             page_params.avatar_url = url;
             page_params.avatar_url_medium = person.avatar_url_medium;
-            $("#user-settings-avatar").attr("src", person.avatar_url_medium);
+            $("#user-avatar-block").attr("src", person.avatar_url_medium);
         }
 
         message_live_update.update_avatar(person_obj.user_id, person.avatar_url);
+    }
+
+    if (_.has(person, 'custom_profile_field')) {
+        people.set_custom_profile_field_data(person.user_id, person.custom_profile_field);
     }
 
      if (_.has(person, 'timezone')) {

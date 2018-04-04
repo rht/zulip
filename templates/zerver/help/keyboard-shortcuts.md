@@ -13,11 +13,6 @@ below, and add more to your repertoire as needed.
 * [Menus](#menus)
 * [Streams settings](#streams-settings-page)
 
-!!! warn ""
-    Replace `Enter` with `Return` if using a Mac keyboard.
-
-    Other Mac shortcuts are shown in parentheses when different.
-
 ## The basics
 
 * **Reply to message**: `r` or `Enter` — Reply to the selected
@@ -25,7 +20,7 @@ below, and add more to your repertoire as needed.
 
 * **New stream message**: `c` — Start a new topic in the current stream.
 
-* **New private message**: `C`
+* **New private message**: `x`
 
 * **Cancel compose**: `Esc` or `Ctrl + [` — Close the compose box and save
   the unsent message as a draft.
@@ -35,10 +30,12 @@ below, and add more to your repertoire as needed.
 
 * **Next message**: `↓` or `j`
 
-* **Last message**: `End` (`Fn` + `⇾`) or `G` — Also marks all messages in
+* **Last message**: `End` or `G` — Also marks all messages in
   the current view as read.
 
 * **Next unread topic**: `n`
+
+* **Next unread private message**: `p`
 
 * **All private messages**: `P`
 
@@ -54,22 +51,24 @@ below, and add more to your repertoire as needed.
 
 * **Search people**: `w`
 
-* **Last message**: `End` (`Fn` + `⇾`) or `G` — Also marks all messages in
+* **Last message**: `End` or `G` — Also marks all messages in
   the current view as read.
 
-* **First message**: `Home` (`Fn` + `⇽`)
+* **First message**: `Home`
 
 * **Previous message**: `↑` or `k`
 
 * **Next message**: `↓` or `j`
 
-* **Scroll up**: `PgUp` (`Fn` + `↑`) or `K`
+* **Scroll up**: `PgUp` or `K`
 
-* **Scroll down**: `PgDn` (`Fn` + `↓`), `J`, or `Spacebar`
+* **Scroll down**: `PgDn`, `J`, or `Spacebar`
 
 ## Narrowing
 
 * **Narrow to next unread topic**: `n`
+
+* **Narrow to next unread private message**: `p`
 
 * **Narrow to stream**: `s`
 
@@ -83,16 +82,18 @@ below, and add more to your repertoire as needed.
 
 ## Composing messages
 
-* **Reply to message**: `r` or `Enter` (`Return`) — Reply to the selected
+* **Reply to message**: `r` or `Enter` — Reply to the selected
   message (outlined in blue). Same behavior as clicking on the message.
 
 * **Reply to message, mentioning author**: `@`
 
 * **Reply only to author**: `R`
 
+* **Quote and reply to message**: `>`
+
 * **New stream message**: `c` — For starting a new topic in a stream.
 
-* **New private message**: `C`
+* **New private message**: `x`
 
 ### In the compose box
 
@@ -140,7 +141,7 @@ title="thumbs up"/>**: `+`
 
 * **Edit selected draft**: `Enter`
 
-* **Delete selected draft**: `Backspace` (`Delete`)
+* **Delete selected draft**: `Backspace`
 
 Keyboard navigation (e.g. arrow keys) works as expected.
 

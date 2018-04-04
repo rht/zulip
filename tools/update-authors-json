@@ -8,7 +8,7 @@ JSON data for the /team page contributors section.
 from lib import sanity_check
 sanity_check.check_venv(__file__)
 
-from typing import Any, Dict, List, Optional, Union, Text
+from typing import Any, Dict, List, Optional, Union, Text, cast
 from mypy_extensions import TypedDict
 
 import os
@@ -27,6 +27,7 @@ from django.conf import settings
 from zerver.lib.utils import split_by
 
 FIXTURE_FILE = os.path.join(os.path.dirname(__file__), '../zerver/fixtures/authors.json')
+duplicate_commits_file = os.path.join(os.path.dirname(__file__), '../zerver/fixtures/duplicate_commits.json')
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--max-retries', type=int, default=3,
@@ -50,7 +51,6 @@ def fetch_contributors(repo_link: str) -> Optional[List[Dict[str, Dict[str, Any]
     r = requests.get(repo_link)  # type: requests.Response
     return r.json() if r.status_code == 200 else None
 
-
 def write_to_disk(json_data: ContributorsJSON, out_file: str) -> None:
     with open(out_file, 'w') as f:
         try:
@@ -71,7 +71,9 @@ def run_production() -> None:
         'desktop': 'https://api.github.com/repos/zulip/zulip-electron/stats/contributors',
         'mobile': 'https://api.github.com/repos/zulip/zulip-mobile/stats/contributors',
         'python-zulip-api': 'https://api.github.com/repos/zulip/python-zulip-api/stats/contributors',
+        'zulip-js': 'https://api.github.com/repos/zulip/zulip-js/stats/contributors',
         'zulipbot': 'https://api.github.com/repos/zulip/zulipbot/stats/contributors',
+        'terminal': 'https://api.github.com/repos/zulip/zulip-terminal/stats/contributors',
     }
 
     data = dict(date=str(date.today()), contrib=[])  # type: ContributorsJSON
@@ -84,15 +86,41 @@ def run_production() -> None:
             if contribs:
                 repos_done.append(name)
                 for contrib in contribs:
-                    username = contrib.get('author').get('login')
+                    assert contrib is not None  # TODO: To improve/clarify
+
+                    author = contrib.get('author')
+                    if author is None:
+                        # This happens for users who've deleted their GitHub account.
+                        continue
+
+                    username = author.get('login')
+                    assert username is not None  # TODO: To improve/clarify
+
+                    avatar = author.get('avatar_url')
+                    assert avatar is not None  # TODO: To improve/clarify
+                    total = contrib.get('total')
+                    assert total is not None  # TODO: To improve/clarify
+
                     contrib_data = {
-                        'avatar': contrib.get('author').get('avatar_url'),
-                        name: contrib.get('total'),
+                        'avatar': avatar,
+                        name: total,
                     }
                     if username in contribs_list:
                         contribs_list[username].update(contrib_data)
                     else:
                         contribs_list[username] = contrib_data
+
+        # remove duplicate contributions count
+        # find commits at the time of split and substract from zulip-server
+        with open(duplicate_commits_file, 'r') as f:
+            duplicate_commits = json.loads(f.read())
+            for committer in duplicate_commits:
+                if committer in contribs_list and contribs_list[committer].get('server'):
+                    total_commits = cast(int, contribs_list[committer]['server'])
+                    duplicate_commits_count = duplicate_commits[committer]
+                    original_commits = total_commits - duplicate_commits_count
+                    contribs_list[committer]['server'] = original_commits
+
         for repo in repos_done:
             del repositories[repo]
 

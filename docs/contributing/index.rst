@@ -13,3 +13,5 @@ Code Contribution Guide
    zulipbot-usage
    accessibility
    bug-reports
+   ../code-of-conduct
+   summer-with-zulip

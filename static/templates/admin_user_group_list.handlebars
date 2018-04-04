@@ -1,0 +1,28 @@
+{{#with user_group}}
+<div class="user-group white-box" id="{{id}}">
+    <h4>
+        <span class="name" data-placeholder="{{t 'Name' }}" contenteditable="true" spellcheck="false">{{name}}</span>
+        —
+        <span class="description" data-placeholder="{{t 'Description' }}" contenteditable="true">{{description}}</span>
+        <button class="save-status saved">
+            <img class="checkmark" src="/static/images/checkbox-green.svg" />
+            {{t 'Saved' }}
+        </button>
+        <button class="save-status cancel">
+            {{t 'Discard changes' }}
+        </button>
+        <button class="button rounded small delete btn-danger">
+            {{t 'Delete' }}
+        </button>
+    </h4>
+    <p>
+        {{t 'Subscribers' }}
+        <div class="pill-container" data-group-pills="{{name}}">
+            <div class="input" contenteditable="true" data-placeholder="{{t 'Add member...' }}"></div>
+        </div>
+        <div class="save-instructions">
+            {{t 'Click outside the input box to save. We\'ll automatically notify anyone that was added or removed.'}}
+        </div>
+    </p>
+</div>
+{{/with}}

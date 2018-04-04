@@ -191,9 +191,12 @@ exports.start = function (msg_type, opts) {
     exports.expand_compose_box();
 
     opts = fill_in_opts_from_current_narrowed_view(msg_type, opts);
-    // If we are invoked by a compose hotkey (c or C), do not assume that we know
-    // what the message's topic or PM recipient should be.
-    if (opts.trigger === "compose_hotkey") {
+    // If we are invoked by a compose hotkey (c or x) or new topic button
+    // or sidebar stream actions (in stream popover), do not assume that we know what
+    // the message's topic or PM recipient should be.
+    if ((opts.trigger === "compose_hotkey") ||
+        (opts.trigger === "new topic button") ||
+        (opts.trigger === "sidebar stream actions")) {
         opts.subject = '';
         opts.private_message_recipient = '';
     }
@@ -244,6 +247,7 @@ exports.cancel = function () {
     notifications.clear_compose_notifications();
     compose.abort_xhr();
     compose_state.set_message_type(false);
+    compose_pm_pill.clear();
     $(document).trigger($.Event('compose_canceled.zulip'));
 };
 
@@ -320,7 +324,7 @@ exports.reply_with_mention = function (opts) {
     exports.respond_to_message(opts);
     var message = current_msg_list.selected_message();
     var mention = '@**' + message.sender_full_name + '**';
-    $('#compose-textarea').val(mention + ' ');
+    compose_ui.insert_syntax_and_focus(mention);
 };
 
 exports.on_topic_narrow = function () {
@@ -353,7 +357,12 @@ exports.on_topic_narrow = function () {
         // appropriate (after all, they were starting to
         // compose on the old topic and may now be looking
         // for info), so we punt and cancel.
-        exports.cancel();
+
+        // If subject is not same as topic narrowed to then
+        // stop composing
+        if (compose_state.subject().toLowerCase() !== narrow_state.topic().toLowerCase()) {
+            exports.cancel();
+        }
         return;
     }
 
@@ -365,7 +374,36 @@ exports.on_topic_narrow = function () {
     $('#compose-textarea').focus().select();
 };
 
-exports.on_narrow = function () {
+exports.quote_and_reply = function (opts) {
+    var textarea = $("#compose-textarea");
+    var message_id = current_msg_list.selected_id();
+
+    exports.respond_to_message(opts);
+    channel.get({
+        url: '/json/messages/' + message_id,
+        idempotent: true,
+        success: function (data) {
+            if (textarea.val() === "") {
+                textarea.val("```quote\n" + data.raw_content +"\n```\n");
+            } else {
+                textarea.val(textarea.val() + "\n```quote\n" + data.raw_content +"\n```\n");
+            }
+            $("#compose-textarea").trigger("autosize.resize");
+        },
+    });
+};
+
+exports.on_narrow = function (opts) {
+    // We use force_close when jumping between PM narrows with the "p" key,
+    // so that we don't have an open compose box that makes it difficult
+    // to cycle quickly through unread messages.
+    if (opts.force_close) {
+        // This closes the compose box if it was already open, and it is
+        // basically a noop otherwise.
+        exports.cancel();
+        return;
+    }
+
     if (narrow_state.narrowed_by_topic_reply()) {
         exports.on_topic_narrow();
         return;

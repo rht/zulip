@@ -86,6 +86,11 @@ exports.snapshot_message = function () {
     return message;
 };
 
+function draft_notify() {
+    $(".alert-draft").css("display", "inline-block");
+    $(".alert-draft").delay(1000).fadeOut(300);
+}
+
 exports.update_draft = function () {
     var draft = drafts.snapshot_message();
     var draft_id = $("#compose-textarea").data("draft-id");
@@ -93,6 +98,7 @@ exports.update_draft = function () {
     if (draft_id !== undefined) {
         if (draft !== undefined) {
             draft_model.editDraft(draft_id, draft);
+            draft_notify();
         } else {
             draft_model.deleteDraft(draft_id);
         }
@@ -100,6 +106,7 @@ exports.update_draft = function () {
         if (draft !== undefined) {
             var new_draft_id = draft_model.addDraft(draft);
             $("#compose-textarea").data("draft-id", new_draft_id);
+            draft_notify();
         }
     }
 };
@@ -143,6 +150,8 @@ exports.restore_draft = function (draft_id) {
 
     overlays.close_overlay("drafts");
     compose_fade.clear_compose();
+    compose.clear_preview_area();
+
     if (draft.type === "stream" && draft.stream === "") {
         draft_copy.subject = "";
     }
@@ -150,6 +159,20 @@ exports.restore_draft = function (draft_id) {
     compose_ui.autosize_textarea();
     $("#compose-textarea").data("draft-id", draft_id);
 };
+
+var DRAFT_LIFETIME = 30;
+
+function remove_old_drafts() {
+    var old_date  = new Date().setDate(new Date().getDate() - DRAFT_LIFETIME);
+    var drafts = draft_model.get();
+    _.each(drafts, function (draft, id) {
+        if (draft.updatedAt < old_date) {
+            draft_model.deleteDraft(id);
+        }
+    });
+}
+// Exporting for testing purpose
+exports.remove_old_drafts = remove_old_drafts;
 
 exports.setup_page = function (callback) {
     function setup_event_handlers() {
@@ -176,8 +199,22 @@ exports.setup_page = function (callback) {
 
     function format_drafts(data) {
         var drafts = {};
+        var data_array = [];
         _.each(data, function (draft, id) {
+            data_array.push([id, data[id]]);
+        });
+        var data_sorted = data_array.sort(function (draft_a,draft_b) {
+            return draft_a[1].updatedAt-draft_b[1].updatedAt;
+        });
+        _.each(data_sorted, function (data_element) {
+            var draft = data_element[1];
+            var id = data_element[0];
             var formatted;
+            var time = new XDate(draft.updatedAt);
+            var time_stamp = timerender.render_now(time).time_str;
+            if (time_stamp === i18n.t("Today")) {
+                time_stamp = timerender.stringify_time(time);
+            }
             if (draft.type === "stream") {
                 // In case there is no stream for the draft, we need a
                 // single space char for proper rendering of the stream label
@@ -193,7 +230,7 @@ exports.setup_page = function (callback) {
                     stream_color: stream_data.get_color(draft.stream),
                     topic: draft_topic,
                     raw_content: draft.content,
-
+                    time_stamp: time_stamp,
                 };
             } else {
                 var emails = util.extract_pm_recipients(draft.private_message_recipient);
@@ -211,6 +248,7 @@ exports.setup_page = function (callback) {
                     is_stream: false,
                     recipients: recipients,
                     raw_content: draft.content,
+                    time_stamp: time_stamp,
                 };
             }
 
@@ -238,7 +276,10 @@ exports.setup_page = function (callback) {
     function _populate_and_fill() {
         $('#drafts_table').empty();
         var drafts = format_drafts(draft_model.get());
-        var rendered = templates.render('draft_table_body', { drafts: drafts });
+        var rendered = templates.render('draft_table_body',{
+                drafts: drafts,
+                draft_lifetime: DRAFT_LIFETIME,
+        });
         $('#drafts_table').append(rendered);
         if ($("#drafts_table .draft-row").length > 0) {
             $('#drafts_table .no-drafts').hide();
@@ -256,6 +297,8 @@ exports.setup_page = function (callback) {
             _populate_and_fill();
         });
     }
+
+    remove_old_drafts();
     populate_and_fill();
 };
 
@@ -341,7 +384,7 @@ exports.drafts_handle_events = function (e, event_key) {
     var elt = document.activeElement;
     var focused_draft = $(elt.parentElement)[0].getAttribute("data-draft-id");
     // Allows user to delete drafts with backspace
-    if (event_key === "backspace") {
+    if (event_key === "backspace" || event_key === "delete") {
         if (elt.parentElement.hasAttribute("data-draft-id")) {
             var focus_draft_back_row = $(elt)[0].parentElement;
             var backnext_focus_draft_row = $(focus_draft_back_row).next();

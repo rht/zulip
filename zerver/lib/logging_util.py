@@ -62,7 +62,7 @@ class ReturnTrue(logging.Filter):
 
 class ReturnEnabled(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
-        return settings.LOGGING_NOT_DISABLED
+        return settings.LOGGING_ENABLED
 
 class RequireReallyDeployed(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
@@ -119,7 +119,11 @@ def skip_site_packages_logs(record: logging.LogRecord) -> bool:
     return True
 
 def find_log_caller_module(record: logging.LogRecord) -> Optional[str]:
-    '''Find the module name corresponding to where this record was logged.'''
+    '''Find the module name corresponding to where this record was logged.
+
+    Sadly `record.module` is just the innermost component of the full
+    module name, so we have to go reconstruct this ourselves.
+    '''
     # Repeat a search similar to that in logging.Logger.findCaller.
     # The logging call should still be on the stack somewhere; search until
     # we find something in the same source file, and that should give the
@@ -187,7 +191,7 @@ class ZulipFormatter(logging.Formatter):
 
 def log_to_file(logger: Logger,
                 filename: str,
-                log_format: str="%(asctime)s%(levelname)-8s%(message)s",
+                log_format: str="%(asctime)s %(levelname)-8s %(message)s",
                 ) -> None:
     """Note: `filename` should be declared in zproject/settings.py in ZULIP_PATHS."""
     formatter = logging.Formatter(log_format)

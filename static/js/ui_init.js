@@ -34,7 +34,7 @@ function message_hover(message_row) {
     message_row.addClass('message_hovered');
     current_message_hover = message_row;
 
-    if (!message.sent_by_me) {
+    if (!message.sent_by_me && !page_params.realm_allow_community_topic_editing) {
         // The actions and reactions icon hover logic is handled entirely by CSS
         return;
     }
@@ -42,9 +42,9 @@ function message_hover(message_row) {
     // But the message edit hover icon is determined by whether the message is still editable
     if ((message_edit.get_editability(message) === message_edit.editability_types.FULL) &&
         !message.status_message) {
-        message_row.find(".edit_content").html('<i class="icon-vector-pencil edit_content_button"></i>');
+        message_row.find(".edit_content").html('<i class="fa fa-pencil edit_content_button" aria-hidden="true" title="Edit"></i>');
     } else {
-        message_row.find(".edit_content").html('<i class="icon-vector-file-text-alt edit_content_button" data-msgid="' + id + '"></i>');
+        message_row.find(".edit_content").html('<i class="fa fa-file-text-o edit_content_button" aria-hidden="true" title="View source" data-msgid="' + id + '"></i>');
     }
 }
 
@@ -211,6 +211,12 @@ $(function () {
     $('#streams_header i[data-toggle="tooltip"]').tooltip({ placement: 'left',
                                        animation: false });
 
+    $('#userlist-header #userlist-title').tooltip({ placement: 'right',
+                                       animation: false });
+
+    $('#userlist-header #user_filter_icon').tooltip({ placement: 'left',
+                                       animation: false });
+
     $('.message_failed i[data-toggle="tooltip"]').tooltip();
 
     $('.copy_message[data-toggle="tooltip"]').tooltip();
@@ -246,16 +252,19 @@ $(function () {
     }
 
     // initialize other stuff
-    reload.initialize();
     server_events.initialize();
     people.initialize();
+    compose_pm_pill.initialize();
+    reload.initialize();
     user_groups.initialize();
     unread.initialize();
     bot_data.initialize(); // Must happen after people.initialize()
     message_fetch.initialize();
+    message_scroll.initialize();
     emoji.initialize();
     markdown.initialize(); // Must happen after emoji.initialize()
-    composebox_typeahead.initialize();
+    compose.initialize();
+    composebox_typeahead.initialize(); // Must happen after compose.initialize()
     search.initialize();
     tutorial.initialize();
     notifications.initialize();
@@ -271,10 +280,11 @@ $(function () {
     stream_list.initialize();
     drafts.initialize();
     sent_messages.initialize();
-    compose.initialize();
     hotspots.initialize();
+    info_overlay.initialize();
     ui.initialize();
-    desktop_notifications_panel.initialize();
+    panels.initialize();
+    typing.initialize();
 });
 
 

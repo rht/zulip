@@ -59,6 +59,14 @@ a {
     user-select: auto;
 }
 
+.text-select {
+    -webkit-touch-callout: text;
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+}
+
 p.n-margin {
     margin: 10px 0px 0px 0px;
 }
@@ -203,6 +211,10 @@ p.n-margin {
     background: hsl(170, 46%, 54%);
 }
 
+#panels .alert.alert-info.red {
+    background: hsl(0, 46%, 54%);
+}
+
 #panels .alert .close {
     line-height: 24px;
 }
@@ -210,6 +222,10 @@ p.n-margin {
 #panels .alert .alert-link {
     color: hsl(169, 100%, 88%);
     font-weight: 600;
+}
+
+#panels .alert.red .alert-link {
+    color: hsl(0, 100%, 88%);
 }
 
 #panels .alert .buttons .alert-link {
@@ -649,7 +665,7 @@ td.pointer {
 /* The way this overrides the menus with a background-color and a high
    z-index is kinda hacky, and requires some annoying color-matching,
    but it works. */
-.alert-copied {
+.alert-msg {
     position: absolute;
     right: -110px;
     font-size: 14px;
@@ -662,11 +678,11 @@ td.pointer {
     display: none;
 }
 
-.private-message .alert-copied {
+.private-message .alert-msg {
     background-color: hsl(192, 19%, 95%);
 }
 
-.include-sender .alert-copied {
+.include-sender .alert-msg {
     top: -3px;
 }
 
@@ -738,7 +754,11 @@ td.pointer {
     font-weight: normal;
     height: 17px;
     line-height: 17px;
+    border-top-color: hsla(0, 0%, 0%, 0.0);
+    border-right-color: hsla(0, 0%, 0%, 0.0);
+    border-bottom-color: hsla(0, 0%, 0%, 0.0);
     background-color: hsl(0, 0%, 88%);
+    border-left-color: hsl(0, 0%, 88%);
     border-width: 0px;
     position: relative;
     text-decoration: none;
@@ -758,9 +778,41 @@ td.pointer {
     text-decoration: none;
 }
 
+.stream_label:after {
+    left: 100%;
+    top: 50%;
+    content: " ";
+    height: 0px;
+    width: 0px;
+    position: absolute;
+    pointer-events: none;
+    margin-top: -11px;
+    border-style: solid;
+    border-width: 11px 0 11px 5px;
+    border-color: inherit;
+    z-index: 2;
+    -moz-transform: scale(.9999);
+}
+
+.stream_label:before {
+    left: 100%;
+    top: 50%;
+    content: " ";
+    height: 0px;
+    width: 0px;
+    position: absolute;
+    pointer-events: none;
+    margin-top: -14px;
+    border-style: solid;
+    border-width: 14px 0 14px 6px;
+    border-color: hsla(0, 0%, 0%, 0.0) hsla(0, 0%, 0%, 0.0) hsla(0, 0%, 0%, 0.0) #ffffff;
+    z-index: 1;
+    -moz-transform: scale(.9999);
+}
+
 .stream_topic {
     display: inline-block;
-    padding: 3px 4px 2px 7px;
+    padding: 3px 3px 2px 12px;
     margin-left: -5px;
     height: 17px;
     line-height: 17px;
@@ -993,6 +1045,7 @@ td.pointer {
     font-size: 14px;
     height: 17px;
     line-height: 17px;
+    border-left-color: hsl(0, 0%, 27%);
 }
 
 /* Base color backgrounds for messageboxes,
@@ -1709,6 +1762,19 @@ blockquote p {
     color: #fff;
 }
 
+.typeahead.dropdown-menu .unsubscribed_icon {
+    display: none;
+}
+
+.typeahead.dropdown-menu .active .unsubscribed_icon {
+    display: block;
+    float: right;
+    margin-top: 5px;
+    margin-right: -12px;
+    font-size: 0.8em;
+    color: hsl(96, 7%, 73%);
+}
+
 .nav .dropdown-menu:after {
     position: absolute;
     width: 0px;
@@ -1977,8 +2043,8 @@ div.floating_recipient {
 }
 
 .settings-section .loading_indicator_spinner {
-    width: 20%;
-    height: 20px;
+    width: 30%;
+    height: 30px;
     margin-top: 7px;
     vertical-align: middle;
     display: inline-block;
@@ -2029,6 +2095,10 @@ div.floating_recipient {
     margin-right: 10px;
 }
 
+li .message_inline_image img {
+    float: none;
+}
+
 .message_inline_image_title {
     font-weight: bold;
 }
@@ -2048,26 +2118,6 @@ div.floating_recipient {
 
 .tex-error {
     color: hsl(0, 0%, 50%);
-}
-
-.hotkeys_table {
-    width: 245px;
-    margin-right: 10px;
-    font-size: 90%;
-    display: inline-block;
-    vertical-align: top;
-}
-
-.hotkeys_table th {
-    width: 245px;
-}
-
-.hotkeys_table .hotkey {
-    font-family: Monaco, Menlo, Consolas, "Courier New", monospace;
-    text-align: right;
-    font-weight: bold;
-    font-size: 90%;
-    white-space: nowrap;
 }
 
 .operator_value {
@@ -2190,6 +2240,20 @@ button.topic_edit_cancel {
     width: 18px;
     height: 18px;
     margin-top: -1px;
+}
+
+div.topic_edit_spinner {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    margin-top: -1px;
+    padding: 2px;
+    vertical-align: middle;
+}
+
+div.topic_edit_spinner .loading_indicator_spinner {
+    width: 14px;
+    height: 14px;
 }
 
 .modal {
@@ -2355,8 +2419,8 @@ button.topic_edit_cancel {
 
 /* FIXME: Combine this rule with the one in portico.css somehow? */
 #pw_strength {
-    width: 220px;
-    height: 25px;
+    width: 100%;
+    height: 10px;
     margin-bottom: 0px;
 }
 
@@ -2521,7 +2585,7 @@ button.topic_edit_cancel {
 }
 
 .alert-word {
-    background-color: hsl(112, 88%, 87%);
+    background-color: hsla(102, 85%, 57%, 0.5);
 }
 
 #organization h1,
@@ -2572,9 +2636,14 @@ button.topic_edit_cancel {
     margin: 5px 0px;
     border: none;
     border-left: 3px solid hsl(0, 0%, 93%);
-    height: 70px;
+    height: 80px;
     padding: 5px;
     z-index: 1;
+
+    -moz-osx-font-smoothing: grayscale;
+    font-smoothing: antialiased;
+    -webkit-font-smoothing: antialiased;
+    text-shadow: rgba(0, 0, 0, .01) 0 0 1px;
 }
 
 .message_content .message_embed > * {
@@ -2586,17 +2655,16 @@ button.topic_edit_cancel {
 .message_embed .message_embed_title {
     padding-top: 0px;
     /* to remove the spacing that the font has from the top of the container. */
-    margin-top: -1px;
+    margin-top: -5px;
 
-    font-size: 1em;
-    font-weight: 600;
+    font-size: 1.2em;
     line-height: normal;
 }
 
 .message_embed .message_embed_description {
     position: relative;
-    margin-top: -5px;
     max-width: 500px;
+    margin-top: 3px;
 
     /* to put it below the container gradient. */
     z-index: -1;
@@ -2604,24 +2672,35 @@ button.topic_edit_cancel {
 
 .message_embed .message_embed_image {
     display: inline-block;
-    width: 60px;
-    height: 60px;
+    width: 70px;
+    height: 70px;
     background-size: cover;
     background-position: center;
 }
 
 .message_embed .data-container {
+    position: relative;
     padding: 0px 5px;
     display: inline-block;
     vertical-align: top;
     max-width: calc(100% - 115px);
-    max-height: 70px;
+    max-height: 80px;
     overflow: hidden;
 }
 
 .message_embed .data-container div {
     display: block;
     border: none;
+}
+
+.message_embed .data-container::after {
+    content: " ";
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+
+    background: linear-gradient(0deg, #fff, transparent 10%);
 }
 
 @media (max-width: 600px) {
@@ -2650,16 +2729,30 @@ button.topic_edit_cancel {
     -ms-user-select: none;
 }
 
-.my_email {
+.user_popover_email {
     text-overflow: ellipsis;
     white-space: nowrap;
     overflow: hidden;
+    transition: all 0.4s ease;
 }
 
-.my_email .tooltip_holder {
+.user_popover_email .tooltip_holder {
     display: none;
     position: absolute;
     left: 50%;
+}
+
+.user_popover_email i {
+    cursor: pointer;
+}
+
+.email_copied,
+.user_popover_email i:hover {
+    color: #53c1ae;
+}
+
+.email_copied i {
+    display: none !important;
 }
 
 .display-tooltip {
@@ -2691,7 +2784,15 @@ button.topic_edit_cancel {
     border-bottom: #4c4c4c solid 7px;
 }
 
-.my_email:hover .email_tooltip {
+.user_popover_email:hover .email_tooltip {
     visibility: visible;
     opacity: 1;
+}
+
+.user_popover_email i.hide_copy_icon {
+    display: none;
+}
+
+.hotkey-hint {
+    opacity: 0.75;
 }

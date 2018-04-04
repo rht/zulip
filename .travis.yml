@@ -49,13 +49,21 @@ matrix:
     # We only get 4 jobs running at a time, so we try to make the first few
     # the most likely to break.
     - python: "3.4"
-      env: TEST_SUITE=frontend
-    - python: "3.4"
-      env: TEST_SUITE=backend
-    - python: "3.4"
       env: TEST_SUITE=production
+    # Other suites moved to CircleCI -- see .circleci/.
     - python: "3.5"
       env: TEST_SUITE=backend
+    - python: "3.4"
+      before_install:
+        - docker-compose --verbose up -d
+        - docker-compose ps
+          #- nc -v localhost 443
+          #- docker exec zulip_zulip_1 nc -v localhost 443
+          #- docker exec zulip_zulip_1 wget -qO- https://localhost
+        - docker exec zulip_zulip_1 ps aux
+        - curl --insecure -v http://localhost:443
+        - docker-compose down
+        - docker-compose rm -sf
 sudo: required
 addons:
   artifacts:
@@ -70,9 +78,3 @@ addons:
       - moreutils
 after_success:
   - codecov
-notifications:
-  webhooks:
-    urls:
-      - https://zulip.org/zulipbot/travis
-    on_success: always
-    on_failure: always

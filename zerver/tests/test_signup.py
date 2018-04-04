@@ -20,7 +20,7 @@ from zerver.views.auth import login_or_register_remote_user, \
     redirect_and_log_into_subdomain
 from zerver.views.invite import get_invitee_emails_set
 from zerver.views.registration import confirmation_key, \
-    send_registration_completion_email
+    send_confirm_registration_email
 
 from zerver.models import (
     get_realm, get_user, get_stream_recipient,
@@ -47,7 +47,7 @@ from zerver.lib.actions import (
 from zerver.lib.mobile_auth_otp import xor_hex_strings, ascii_to_hex, \
     otp_encrypt_api_key, is_valid_otp, hex_to_ascii, otp_decrypt_api_key
 from zerver.lib.notifications import enqueue_welcome_emails, \
-    one_click_unsubscribe_link
+    one_click_unsubscribe_link, followup_day2_email_delay
 from zerver.lib.subdomains import is_root_domain_available
 from zerver.lib.test_helpers import find_key_by_email, queries_captured, \
     HostRequestMock, load_subdomain_token
@@ -67,6 +67,7 @@ from typing import Any, Dict, List, Optional, Set, Text
 
 import urllib
 import os
+import pytz
 
 class RedirectAndLogIntoSubdomainTestCase(ZulipTestCase):
     def test_cookie_data(self) -> None:
@@ -75,14 +76,16 @@ class RedirectAndLogIntoSubdomainTestCase(ZulipTestCase):
         email = self.example_email("hamlet")
         response = redirect_and_log_into_subdomain(realm, name, email)
         data = load_subdomain_token(response)
-        self.assertDictEqual(data, {'name': name, 'email': email,
+        self.assertDictEqual(data, {'name': name, 'next': '',
+                                    'email': email,
                                     'subdomain': realm.subdomain,
                                     'is_signup': False})
 
         response = redirect_and_log_into_subdomain(realm, name, email,
                                                    is_signup=True)
         data = load_subdomain_token(response)
-        self.assertDictEqual(data, {'name': name, 'email': email,
+        self.assertDictEqual(data, {'name': name, 'next': '',
+                                    'email': email,
                                     'subdomain': realm.subdomain,
                                     'is_signup': True})
 
@@ -134,6 +137,11 @@ class AddNewUserHistoryTest(ZulipTestCase):
         streams = Stream.objects.filter(id__in=[sub.recipient.type_id for sub in subs])
         self.send_stream_message(self.example_email('hamlet'), streams[0].name, "test")
         add_new_user_history(user_profile, streams)
+
+class InitialPasswordTest(ZulipTestCase):
+    def test_none_initial_password_salt(self) -> None:
+        with self.settings(INITIAL_PASSWORD_SALT=None):
+            self.assertIsNone(initial_password('test@test.com'))
 
 class PasswordResetTest(ZulipTestCase):
     """
@@ -312,7 +320,9 @@ class LoginTest(ZulipTestCase):
         self.assertIsNone(get_session_dict_user(self.client.session))
 
     def test_login_bad_password(self) -> None:
-        self.login(self.example_email("hamlet"), password="wrongpassword", fails=True)
+        email = self.example_email("hamlet")
+        result = self.login_with_return(email, password="wrongpassword")
+        self.assert_in_success_response([email], result)
         self.assertIsNone(get_session_dict_user(self.client.session))
 
     def test_login_nonexist_user(self) -> None:
@@ -353,7 +363,7 @@ class LoginTest(ZulipTestCase):
         with queries_captured() as queries:
             self.register(self.nonreg_email('test'), "test")
         # Ensure the number of queries we make is not O(streams)
-        self.assert_length(queries, 69)
+        self.assert_length(queries, 70)
         user_profile = self.nonreg_user('test')
         self.assertEqual(get_session_dict_user(self.client.session), user_profile.id)
         self.assertFalse(user_profile.enable_stream_desktop_notifications)
@@ -384,7 +394,6 @@ class LoginTest(ZulipTestCase):
         result = self.client_post('/accounts/home/', {'email': email},
                                   subdomain="zulip")
         self.assertEqual(result.status_code, 302)
-        print(result.url)
         self.assertNotIn('deactivated', result.url)
 
         realm = get_realm("zulip")
@@ -509,7 +518,7 @@ class InviteUserTest(InviteUserBase):
         self.login(self.example_email('hamlet'))
         invitee = self.nonreg_email('alice')
         response = self.invite(invitee, ["Denmark"], invite_as_admin="true")
-        self.assert_json_error(response, "Must be a realm administrator")
+        self.assert_json_error(response, "Must be an organization administrator")
 
     def test_successful_invite_user_with_name(self) -> None:
         """
@@ -550,7 +559,7 @@ class InviteUserTest(InviteUserBase):
         email2 = "bob-test@zulip.com"
         invitee = "Alice Test <{}>, {}".format(email, email2)
         self.assert_json_error(self.invite(invitee, ["Denmark"]),
-                               "Must be a realm administrator")
+                               "Must be an organization administrator")
 
         # Now verify an administrator can do it
         self.login("iago@zulip.com")
@@ -644,6 +653,15 @@ earl-test@zulip.com""", ["Denmark"]))
             self.assertTrue(find_key_by_email("%s-test@zulip.com" % (user,)))
         self.check_sent_emails(["bob-test@zulip.com", "carol-test@zulip.com",
                                 "dave-test@zulip.com", "earl-test@zulip.com"])
+
+    def test_max_invites_model(self) -> None:
+        realm = get_realm("zulip")
+        self.assertEqual(realm.max_invites, settings.INVITES_DEFAULT_REALM_DAILY_MAX)
+        realm.max_invites = 3
+        realm.save()
+        self.assertEqual(get_realm("zulip").max_invites, 3)
+        realm.max_invites = settings.INVITES_DEFAULT_REALM_DAILY_MAX
+        realm.save()
 
     def test_invite_too_many_users(self) -> None:
         # Only a light test of this pathway; e.g. doesn't test that
@@ -790,7 +808,32 @@ so we didn't send them an invitation. We did send invitations to everyone else!"
 
         result = self.submit_reg_form_for_user("foo@example.com", "password")
         self.assertEqual(result.status_code, 200)
-        self.assert_in_response("only allows users with e-mail", result)
+        self.assert_in_response("only allows users with email addresses", result)
+
+    def test_disposable_emails_before_closing(self) -> None:
+        """
+        If you invite someone with a disposable email when
+        `disallow_disposable_email_addresses = False`, but
+        later changes to true, the invitation should succeed
+        but the invitee's signup attempt should fail.
+        """
+        zulip_realm = get_realm("zulip")
+        zulip_realm.restricted_to_domain = False
+        zulip_realm.disallow_disposable_email_addresses = False
+        zulip_realm.save()
+
+        self.login(self.example_email("hamlet"))
+        external_address = "foo@mailnator.com"
+
+        self.assert_json_success(self.invite(external_address, ["Denmark"]))
+        self.check_sent_emails([external_address])
+
+        zulip_realm.disallow_disposable_email_addresses = True
+        zulip_realm.save()
+
+        result = self.submit_reg_form_for_user("foo@mailnator.com", "password")
+        self.assertEqual(result.status_code, 200)
+        self.assert_in_response("Please sign up using a real email address.", result)
 
     def test_invite_with_non_ascii_streams(self) -> None:
         """
@@ -882,7 +925,6 @@ so we didn't send them an invitation. We did send invitations to everyone else!"
         conf.save()
 
         target_url = '/' + url.split('/', 3)[3]
-        print(target_url)
         result = self.client_get(target_url)
         self.assert_in_success_response(["Whoops. The confirmation link has expired "
                                          "or been deactivated."], result)
@@ -1026,8 +1068,7 @@ class MultiuseInviteTest(ZulipTestCase):
         invite.save()
 
         if streams is not None:
-            invite.streams = streams
-            invite.save()
+            invite.streams.set(streams)
 
         if date_sent is None:
             date_sent = timezone_now()
@@ -1114,6 +1155,52 @@ class MultiuseInviteTest(ZulipTestCase):
         invite_link = self.generate_multiuse_invite_link(streams=streams)
         self.check_user_able_to_register(email2, invite_link)
         self.check_user_subscribed_only_to_streams(name2, streams)
+
+    def test_create_multiuse_link_api_call(self) -> None:
+        self.login(self.example_email('iago'))
+
+        result = self.client_post('/json/invites/multiuse')
+        self.assert_json_success(result)
+
+        invite_link = result.json()["invite_link"]
+        self.check_user_able_to_register(self.nonreg_email("test"), invite_link)
+
+    def test_create_multiuse_link_with_specified_streams_api_call(self) -> None:
+        self.login(self.example_email('iago'))
+        stream_names = ["Rome", "Scotland", "Venice"]
+        streams = [get_stream(stream_name, self.realm) for stream_name in stream_names]
+        stream_ids = [stream.id for stream in streams]
+
+        result = self.client_post('/json/invites/multiuse',
+                                  {"stream_ids": ujson.dumps(stream_ids)})
+        self.assert_json_success(result)
+
+        invite_link = result.json()["invite_link"]
+        self.check_user_able_to_register(self.nonreg_email("test"), invite_link)
+        self.check_user_subscribed_only_to_streams("test", streams)
+
+    def test_only_admin_can_create_multiuse_link_api_call(self) -> None:
+        self.login(self.example_email('iago'))
+        # Only admins should be able to create multiuse invites even if
+        # invite_by_admins_only is set to False.
+        self.realm.invite_by_admins_only = False
+        self.realm.save()
+
+        result = self.client_post('/json/invites/multiuse')
+        self.assert_json_success(result)
+
+        invite_link = result.json()["invite_link"]
+        self.check_user_able_to_register(self.nonreg_email("test"), invite_link)
+
+        self.login(self.example_email('hamlet'))
+        result = self.client_post('/json/invites/multiuse')
+        self.assert_json_error(result, "Must be an organization administrator")
+
+    def test_create_multiuse_link_invalid_stream_api_call(self) -> None:
+        self.login(self.example_email('iago'))
+        result = self.client_post('/json/invites/multiuse',
+                                  {"stream_ids": ujson.dumps([54321])})
+        self.assert_json_error(result, "Invalid stream id 54321. No invites were sent.")
 
 class EmailUnsubscribeTests(ZulipTestCase):
     def test_error_unsubscribe(self) -> None:
@@ -1206,7 +1293,7 @@ class RealmCreationTest(ZulipTestCase):
         self.assertIsNone(realm)
 
         # Create new realm with the email
-        result = self.client_post('/create_realm/', {'email': email})
+        result = self.client_post('/new/', {'email': email})
         self.assertEqual(result.status_code, 302)
         self.assertTrue(result["Location"].endswith(
             "/accounts/send_confirm/%s" % (email,)))
@@ -1253,7 +1340,7 @@ class RealmCreationTest(ZulipTestCase):
         self.check_able_to_create_realm("hamlet@zulip.com")
 
     def test_create_realm_as_system_bot(self) -> None:
-        result = self.client_post('/create_realm/', {'email': 'notification-bot@zulip.com'})
+        result = self.client_post('/new/', {'email': 'notification-bot@zulip.com'})
         self.assertEqual(result.status_code, 200)
         self.assert_in_response('notification-bot@zulip.com is an email address reserved', result)
 
@@ -1266,7 +1353,7 @@ class RealmCreationTest(ZulipTestCase):
 
         with self.settings(OPEN_REALM_CREATION=False):
             # Create new realm with the email, but no creation key.
-            result = self.client_post('/create_realm/', {'email': email})
+            result = self.client_post('/new/', {'email': email})
             self.assertEqual(result.status_code, 200)
             self.assert_in_response('New organization creation disabled.', result)
 
@@ -1281,7 +1368,7 @@ class RealmCreationTest(ZulipTestCase):
         self.assertIsNone(get_realm(string_id))
 
         # Create new realm with the email
-        result = self.client_post('/create_realm/', {'email': email})
+        result = self.client_post('/new/', {'email': email})
         self.assertEqual(result.status_code, 302)
         self.assertTrue(result["Location"].endswith(
             "/accounts/send_confirm/%s" % (email,)))
@@ -1311,7 +1398,7 @@ class RealmCreationTest(ZulipTestCase):
 
     @override_settings(OPEN_REALM_CREATION=True)
     def test_mailinator_signup(self) -> None:
-        result = self.client_post('/create_realm/', {'email': "hi@mailinator.com"})
+        result = self.client_post('/new/', {'email': "hi@mailinator.com"})
         self.assert_in_response('Please use your real email address.', result)
 
     @override_settings(OPEN_REALM_CREATION=True)
@@ -1320,7 +1407,7 @@ class RealmCreationTest(ZulipTestCase):
         email = "user1@test.com"
         realm_name = "Test"
 
-        result = self.client_post('/create_realm/', {'email': email})
+        result = self.client_post('/new/', {'email': email})
         self.client_get(result["Location"])
         confirmation_url = self.get_confirmation_url_from_outbox(email)
         self.client_get(confirmation_url)
@@ -1353,7 +1440,7 @@ class RealmCreationTest(ZulipTestCase):
         email = "user1@test.com"
         realm_name = "Test"
 
-        result = self.client_post('/create_realm/', {'email': email})
+        result = self.client_post('/new/', {'email': email})
         self.client_get(result["Location"])
         confirmation_url = self.get_confirmation_url_from_outbox(email)
         self.client_get(confirmation_url)
@@ -1378,7 +1465,7 @@ class RealmCreationTest(ZulipTestCase):
         email = "user1@test.com"
         realm_name = "Test"
 
-        result = self.client_post('/create_realm/', {'email': email})
+        result = self.client_post('/new/', {'email': email})
         self.client_get(result["Location"])
         confirmation_url = self.get_confirmation_url_from_outbox(email)
         self.client_get(confirmation_url)
@@ -1408,6 +1495,17 @@ class RealmCreationTest(ZulipTestCase):
         realm.save()
         self.assertFalse(is_root_domain_available())
 
+    def test_subdomain_check_api(self) -> None:
+        result = self.client_get("/json/realm/subdomain/zulip")
+        self.assert_in_success_response(["Subdomain unavailable. Please choose a different one."], result)
+
+        result = self.client_get("/json/realm/subdomain/zu_lip")
+        self.assert_in_success_response(["Subdomain can only have lowercase letters, numbers, and \'-\'s."], result)
+
+        result = self.client_get("/json/realm/subdomain/hufflepuff")
+        self.assert_in_success_response(["available"], result)
+        self.assert_not_in_success_response(["unavailable"], result)
+
 class UserSignUpTest(ZulipTestCase):
 
     def _assert_redirected_to(self, result: HttpResponse, url: Text) -> None:
@@ -1421,7 +1519,7 @@ class UserSignUpTest(ZulipTestCase):
         email = self.nonreg_email('newguy')
 
         smtp_mock = patch(
-            'zerver.views.registration.send_registration_completion_email',
+            'zerver.views.registration.send_confirm_registration_email',
             side_effect=smtplib.SMTPException('uh oh')
         )
 
@@ -1444,14 +1542,14 @@ class UserSignUpTest(ZulipTestCase):
         email = self.nonreg_email('newguy')
 
         smtp_mock = patch(
-            'zerver.views.registration.send_registration_completion_email',
+            'zerver.views.registration.send_confirm_registration_email',
             side_effect=smtplib.SMTPException('uh oh')
         )
 
         error_mock = patch('logging.error')
 
         with smtp_mock, error_mock as err:
-            result = self.client_post('/create_realm/', {'email': email})
+            result = self.client_post('/new/', {'email': email})
 
         self._assert_redirected_to(result, '/config-error/smtp')
 
@@ -1492,6 +1590,34 @@ class UserSignUpTest(ZulipTestCase):
         self.assertEqual(user_profile.timezone, timezone)
         from django.core.mail import outbox
         outbox.pop()
+
+    def test_default_twenty_four_hour_time(self) -> None:
+        """
+        Check if the default twenty_four_hour_time setting of new user
+        is the default twenty_four_hour_time of the realm.
+        """
+        email = self.nonreg_email('newguy')
+        password = "newpassword"
+        realm = get_realm('zulip')
+        do_set_realm_property(realm, 'default_twenty_four_hour_time', True)
+
+        result = self.client_post('/accounts/home/', {'email': email})
+        self.assertEqual(result.status_code, 302)
+        self.assertTrue(result["Location"].endswith(
+            "/accounts/send_confirm/%s" % (email,)))
+        result = self.client_get(result["Location"])
+        self.assert_in_response("Check your email so we can get started.", result)
+
+        # Visit the confirmation link.
+        confirmation_url = self.get_confirmation_url_from_outbox(email)
+        result = self.client_get(confirmation_url)
+        self.assertEqual(result.status_code, 200)
+
+        result = self.submit_reg_form_for_user(email, password)
+        self.assertEqual(result.status_code, 302)
+
+        user_profile = self.nonreg_user('newguy')
+        self.assertEqual(user_profile.twenty_four_hour_time, realm.default_twenty_four_hour_time)
 
     def test_signup_already_active(self) -> None:
         """
@@ -1784,6 +1910,18 @@ class UserSignUpTest(ZulipTestCase):
         form = HomepageForm({'email': email}, realm=realm)
         self.assertIn("Your email address, {}, is not in one of the domains".format(email),
                       form.errors['email'][0])
+
+    def test_failed_signup_due_to_disposable_email(self) -> None:
+        realm = get_realm('zulip')
+        realm.restricted_to_domain = False
+        realm.disallow_disposable_email_addresses = True
+        realm.save()
+
+        request = HostRequestMock(host = realm.host)
+        request.session = {}  # type: ignore
+        email = 'abc@mailnator.com'
+        form = HomepageForm({'email': email}, realm=realm)
+        self.assertIn("Please use your real email address", form.errors['email'][0])
 
     def test_failed_signup_due_to_invite_required(self) -> None:
         realm = get_realm('zulip')
@@ -2504,4 +2642,26 @@ class LoginOrAskForRegistrationTestCase(ZulipTestCase):
         user_id = get_session_dict_user(getattr(request, 'session'))
         self.assertEqual(user_id, user_profile.id)
         self.assertEqual(response.status_code, 302)
-        self.assertIn('http://zulip.testserver', response.url)
+        self.assertEqual('http://zulip.testserver', response.url)
+
+class FollowupEmailTest(ZulipTestCase):
+    def test_followup_day2_email(self) -> None:
+        user_profile = self.example_user('hamlet')
+        # Test date_joined == Sunday
+        user_profile.date_joined = datetime.datetime(2018, 1, 7, 1, 0, 0, 0, pytz.UTC)
+        self.assertEqual(followup_day2_email_delay(user_profile), datetime.timedelta(days=2, hours=-1))
+        # Test date_joined == Tuesday
+        user_profile.date_joined = datetime.datetime(2018, 1, 2, 1, 0, 0, 0, pytz.UTC)
+        self.assertEqual(followup_day2_email_delay(user_profile), datetime.timedelta(days=2, hours=-1))
+        # Test date_joined == Thursday
+        user_profile.date_joined = datetime.datetime(2018, 1, 4, 1, 0, 0, 0, pytz.UTC)
+        self.assertEqual(followup_day2_email_delay(user_profile), datetime.timedelta(days=1, hours=-1))
+        # Test date_joined == Friday
+        user_profile.date_joined = datetime.datetime(2018, 1, 5, 1, 0, 0, 0, pytz.UTC)
+        self.assertEqual(followup_day2_email_delay(user_profile), datetime.timedelta(days=3, hours=-1))
+
+        # Time offset of America/Phoenix is -07:00
+        user_profile.timezone = 'America/Phoenix'
+        # Test date_joined == Friday in UTC, but Thursday in the user's timezone
+        user_profile.date_joined = datetime.datetime(2018, 1, 5, 1, 0, 0, 0, pytz.UTC)
+        self.assertEqual(followup_day2_email_delay(user_profile), datetime.timedelta(days=1, hours=-1))

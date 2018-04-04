@@ -40,13 +40,13 @@ def get_migration_status(**options: Any) -> str:
         if module_has_submodule(app_config.module, "management"):
             import_module('.management', app_config.name)
 
-    app_labels = [options['app_label']] if options.get('app_label') else None
+    app_label = options['app_label'] if options.get('app_label') else None
     db = options.get('database', DEFAULT_DB_ALIAS)
     out = StringIO()
     call_command(
         'showmigrations',
         '--list',
-        app_labels=app_labels,
+        app_label=app_label,
         database=db,
         no_color=options.get('no_color', False),
         settings=options.get('settings', os.environ['DJANGO_SETTINGS_MODULE']),
@@ -94,12 +94,11 @@ def _check_hash(target_hash_file: str, status_dir: str) -> bool:
     return source_hash_content == target_hash_content
 
 def is_template_database_current(
-        database_name='zulip_test_template',
-        migration_status=None,
-        settings='zproject.test_settings',
-        status_dir=None,
-        check_files=None):
-    # type: (str, str, str, str, Optional[List[str]]) -> bool
+        database_name: str='zulip_test_template',
+        migration_status: Optional[str]=None,
+        settings: str='zproject.test_settings',
+        status_dir: Optional[str]=None,
+        check_files: Optional[List[str]]=None) -> bool:
     # Using str type for check_files because re.split doesn't accept unicode
     if check_files is None:
         check_files = [
@@ -107,6 +106,10 @@ def is_template_database_current(
             'zerver/lib/generate_test_data.py',
             'tools/setup/postgres-init-test-db',
             'tools/setup/postgres-init-dev-db',
+            'zproject/dev_settings.py',
+            'zproject/prod_settings_template.py',
+            'zproject/settings.py',
+            'zproject/test_settings.py',
         ]
     if status_dir is None:
         status_dir = os.path.join(UUID_VAR_DIR, 'test_db_status')

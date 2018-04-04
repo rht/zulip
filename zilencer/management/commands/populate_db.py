@@ -9,14 +9,18 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandParser
 from django.db.models import F, Max
 from django.utils.timezone import now as timezone_now
+from django.utils.timezone import timedelta as timezone_timedelta
 
-from zerver.lib.actions import STREAM_ASSIGNMENT_COLORS, \
-    do_change_is_admin, do_send_messages
+from zerver.lib.actions import STREAM_ASSIGNMENT_COLORS, check_add_realm_emoji, \
+    do_change_is_admin, do_send_messages, do_update_user_custom_profile_data, \
+    try_add_realm_custom_profile_field
 from zerver.lib.bulk_create import bulk_create_streams, bulk_create_users
+from zerver.lib.cache import cache_set
 from zerver.lib.generate_test_data import create_test_data
 from zerver.lib.upload import upload_backend
+from zerver.lib.url_preview.preview import CACHE_NAME as PREVIEW_CACHE_NAME
 from zerver.lib.user_groups import create_user_group
-from zerver.models import DefaultStream, Message, Realm, RealmAuditLog, \
+from zerver.models import CustomProfileField, DefaultStream, Message, Realm, RealmAuditLog, \
     RealmDomain, RealmEmoji, Recipient, Service, Stream, Subscription, \
     UserMessage, UserPresence, UserProfile, clear_database, \
     email_to_username, get_client, get_huddle, get_realm, get_stream, \
@@ -62,6 +66,12 @@ class Command(BaseCommand):
                             default=0,
                             help='The number of extra bots to create')
 
+        parser.add_argument('--extra-streams',
+                            dest='extra_streams',
+                            type=int,
+                            default=0,
+                            help='The number of extra streams to create')
+
         parser.add_argument('--huddles',
                             dest='num_huddles',
                             type=int,
@@ -77,7 +87,7 @@ class Command(BaseCommand):
         parser.add_argument('--threads',
                             dest='threads',
                             type=int,
-                            default=10,
+                            default=1,
                             help='The number of threads to use.')
 
         parser.add_argument('--percent-huddles',
@@ -173,15 +183,19 @@ class Command(BaseCommand):
             zulip_realm_bots.extend(all_realm_bots)
             create_users(zulip_realm, zulip_realm_bots, bot_type=UserProfile.DEFAULT_BOT)
 
+            zoe = get_user("zoe@zulip.com", zulip_realm)
             zulip_webhook_bots = [
                 ("Zulip Webhook Bot", "webhook-bot@zulip.com"),
             ]
+            # If a stream is not supplied in the webhook URL, the webhook
+            # will (in some cases) send the notification as a PM to the
+            # owner of the webhook bot, so bot_owner can't be None
             create_users(zulip_realm, zulip_webhook_bots,
-                         bot_type=UserProfile.INCOMING_WEBHOOK_BOT)
+                         bot_type=UserProfile.INCOMING_WEBHOOK_BOT, bot_owner=zoe)
+            aaron = get_user("AARON@zulip.com", zulip_realm)
             zulip_outgoing_bots = [
                 ("Outgoing Webhook", "outgoing-webhook@zulip.com")
             ]
-            aaron = get_user("AARON@zulip.com", zulip_realm)
             create_users(zulip_realm, zulip_outgoing_bots,
                          bot_type=UserProfile.OUTGOING_WEBHOOK_BOT, bot_owner=aaron)
             # TODO: Clean up this initial bot creation code
@@ -236,6 +250,27 @@ class Command(BaseCommand):
 
             Subscription.objects.bulk_create(subscriptions_to_add)
             RealmAuditLog.objects.bulk_create(all_subscription_logs)
+
+            # Create custom profile field data
+            phone_number = try_add_realm_custom_profile_field(zulip_realm, "Phone number",
+                                                              CustomProfileField.SHORT_TEXT)
+            biography = try_add_realm_custom_profile_field(zulip_realm, "Biography",
+                                                           CustomProfileField.LONG_TEXT)
+            favorite_food = try_add_realm_custom_profile_field(zulip_realm, "Favorite food",
+                                                               CustomProfileField.SHORT_TEXT)
+
+            # Fill in values for Iago and Hamlet
+            hamlet = get_user("hamlet@zulip.com", zulip_realm)
+            do_update_user_custom_profile_data(iago, [
+                {"id": phone_number.id, "value": "+1-234-567-8901"},
+                {"id": biography.id, "value": "Betrayer of Othello."},
+                {"id": favorite_food.id, "value": "Apples"},
+            ])
+            do_update_user_custom_profile_data(hamlet, [
+                {"id": phone_number.id, "value": "+0-11-23-456-7890"},
+                {"id": biography.id, "value": "Prince of Denmark, and other things!"},
+                {"id": favorite_food.id, "value": "Dark chocolate"},
+            ])
         else:
             zulip_realm = get_realm("zulip")
             recipient_streams = [klass.type_id for klass in
@@ -246,16 +281,8 @@ class Command(BaseCommand):
 
         # Create a test realm emoji.
         IMAGE_FILE_PATH = os.path.join(settings.STATIC_ROOT, 'images', 'test-images', 'checkbox.png')
-        UPLOADED_EMOJI_FILE_NAME = 'green_tick.png'
         with open(IMAGE_FILE_PATH, 'rb') as fp:
-            upload_backend.upload_emoji_image(fp, UPLOADED_EMOJI_FILE_NAME, iago)
-            RealmEmoji.objects.create(
-                name='green_tick',
-                author=iago,
-                realm=zulip_realm,
-                deactivated=False,
-                file_name=UPLOADED_EMOJI_FILE_NAME,
-            )
+            check_add_realm_emoji(zulip_realm, 'green_tick', iago, fp)
 
         if not options["test_suite"]:
             # Populate users with some bar data
@@ -282,6 +309,15 @@ class Command(BaseCommand):
 
         # Generate a new set of test data.
         create_test_data()
+
+        # prepopulate the URL preview/embed data for the links present
+        # in the config.generate_data.json data set.  This makes it
+        # possible for populate_db to run happily without Internet
+        # access.
+        with open("zerver/fixtures/docs_url_preview_data.json", "r") as f:
+            urls_with_preview_data = ujson.load(f)
+            for url in urls_with_preview_data:
+                cache_set(url, urls_with_preview_data[url], PREVIEW_CACHE_NAME)
 
         threads = options["threads"]
         jobs = []  # type: List[Tuple[int, List[List[int]], Dict[str, Any], Callable[[str], int], int]]
@@ -338,6 +374,24 @@ class Command(BaseCommand):
                     "errors": {"description": "For errors", "invite_only": False},
                     "sales": {"description": "For sales discussion", "invite_only": False}
                 }  # type: Dict[Text, Dict[Text, Any]]
+
+                # Calculate the maximum number of digits in any extra stream's
+                # number, since a stream with name "Extra Stream 3" could show
+                # up after "Extra Stream 29". (Used later to pad numbers with
+                # 0s).
+                maximum_digits = len(str(options['extra_streams'] - 1))
+
+                for i in range(options['extra_streams']):
+                    # Pad the number with 0s based on `maximum_digits`.
+                    number_str = str(i).zfill(maximum_digits)
+
+                    extra_stream_name = 'Extra Stream ' + number_str
+
+                    zulip_stream_dict[extra_stream_name] = {
+                        "description": "Auto-generated extra stream.",
+                        "invite_only": False,
+                    }
+
                 bulk_create_streams(zulip_realm, zulip_stream_dict)
                 # Now that we've created the notifications stream, configure it properly.
                 zulip_realm.notifications_stream = get_stream("announce", zulip_realm)
@@ -485,7 +539,25 @@ def send_messages(data: Tuple[int, Sequence[Sequence[int]], Mapping[str, Any],
             message.subject = stream.name + Text(random.randint(1, 3))
             saved_data['subject'] = message.subject
 
-        message.pub_date = timezone_now()
+        # Spoofing time not supported with threading
+        if options['threads'] != 1:
+            message.pub_date = timezone_now()
+        else:
+            # Distrubutes 80% of messages starting from 5 days ago, over a period
+            # of 3 days. Then, distributes remaining messages over past 24 hours.
+            spoofed_date = timezone_now() - timezone_timedelta(days = 5)
+            if (num_messages < tot_messages * 0.8):
+                # Maximum of 3 days ahead, convert to minutes
+                time_ahead = 3 * 24 * 60
+                time_ahead //= int(tot_messages * 0.8)
+            else:
+                time_ahead = 24 * 60
+                time_ahead //= int(tot_messages * 0.2)
+
+            spoofed_minute = random.randint(time_ahead * num_messages, time_ahead * (num_messages + 1))
+            spoofed_date += timezone_timedelta(minutes = spoofed_minute)
+            message.pub_date = spoofed_date
+
         # We disable USING_RABBITMQ here, so that deferred work is
         # executed in do_send_message_messages, rather than being
         # queued.  This is important, because otherwise, if run-dev.py

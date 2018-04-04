@@ -36,20 +36,22 @@ def cleanup_event_queue(request: HttpRequest, user_profile: UserProfile,
 
 @asynchronous
 @has_request_variables
-def get_events_backend(request, user_profile, handler,
-                       user_client = REQ(converter=get_client, default=None),
-                       last_event_id = REQ(converter=int, default=None),
-                       queue_id = REQ(default=None),
-                       apply_markdown = REQ(default=False, validator=check_bool),
-                       client_gravatar = REQ(default=False, validator=check_bool),
-                       all_public_streams = REQ(default=False, validator=check_bool),
-                       event_types = REQ(default=None, validator=check_list(check_string)),
-                       dont_block = REQ(default=False, validator=check_bool),
-                       narrow = REQ(default=[], validator=check_list(None)),
-                       lifespan_secs = REQ(default=0, converter=int)):
-    # type: (HttpRequest, UserProfile, BaseHandler, Optional[Client], Optional[int], Optional[List[Text]], bool, bool, bool, Optional[Text], bool, Iterable[Sequence[Text]], int) -> Union[HttpResponse, _RespondAsynchronously]
+def get_events_backend(request: HttpRequest, user_profile: UserProfile, handler: BaseHandler,
+                       user_client: Optional[Client]=REQ(converter=get_client, default=None),
+                       last_event_id: Optional[int]=REQ(converter=int, default=None),
+                       queue_id: Optional[List[Text]]=REQ(default=None),
+                       apply_markdown: bool=REQ(default=False, validator=check_bool),
+                       client_gravatar: bool=REQ(default=False, validator=check_bool),
+                       all_public_streams: bool=REQ(default=False, validator=check_bool),
+                       event_types: Optional[Text]=REQ(default=None, validator=check_list(check_string)),
+                       dont_block: bool=REQ(default=False, validator=check_bool),
+                       narrow: Iterable[Sequence[Text]]=REQ(default=[], validator=check_list(None)),
+                       lifespan_secs: int=REQ(default=0, converter=int)
+                       ) -> Union[HttpResponse, _RespondAsynchronously]:
     if user_client is None:
-        user_client = request.client
+        valid_user_client = request.client
+    else:
+        valid_user_client = user_client
 
     events_query = dict(
         user_profile_id = user_profile.id,
@@ -57,7 +59,7 @@ def get_events_backend(request, user_profile, handler,
         queue_id = queue_id,
         last_event_id = last_event_id,
         event_types = event_types,
-        client_type_name = user_client.name,
+        client_type_name = valid_user_client.name,
         all_public_streams = all_public_streams,
         lifespan_secs = lifespan_secs,
         narrow = narrow,
@@ -70,7 +72,7 @@ def get_events_backend(request, user_profile, handler,
             realm_id = user_profile.realm_id,
             user_profile_email = user_profile.email,
             event_types = event_types,
-            client_type_name = user_client.name,
+            client_type_name = valid_user_client.name,
             apply_markdown = apply_markdown,
             client_gravatar = client_gravatar,
             all_public_streams = all_public_streams,

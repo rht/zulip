@@ -14,8 +14,10 @@ ZULIP_PATH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 
 sys.path.append(ZULIP_PATH)
 from scripts.lib.zulip_tools import run, subprocess_text_output, OKBLUE, ENDC, WARNING, \
-    get_dev_uuid_var_path
-from scripts.lib.setup_venv import VENV_DEPENDENCIES
+    get_dev_uuid_var_path, FAIL
+from scripts.lib.setup_venv import (
+    setup_virtualenv, VENV_DEPENDENCIES, THUMBOR_VENV_DEPENDENCIES
+)
 from scripts.lib.node_cache import setup_node_modules, NODE_MODULES_CACHE_PATH
 
 from version import PROVISION_VERSION
@@ -52,7 +54,7 @@ if is_travis:
     EMOJI_CACHE_PATH = "/home/travis/zulip-emoji-cache"
 
 if not os.path.exists(os.path.join(ZULIP_PATH, ".git")):
-    print("Error: No Zulip git repository present!")
+    print(FAIL + "Error: No Zulip git repository present!" + ENDC)
     print("To setup the Zulip development environment, you should clone the code")
     print("from GitHub, rather than using a Zulip production release tarball.")
     sys.exit(1)
@@ -80,7 +82,8 @@ try:
     )
     os.remove(os.path.join(VAR_DIR_PATH, 'zulip-test-symlink'))
 except OSError as err:
-    print("Error: Unable to create symlinks. Make sure you have permission to create symbolic links.")
+    print(FAIL + "Error: Unable to create symlinks."
+          "Make sure you have permission to create symbolic links." + ENDC)
     print("See this page for more information:")
     print("  https://zulip.readthedocs.io/en/latest/development/setup-vagrant.html#os-symlink-error")
     sys.exit(1)
@@ -128,7 +131,7 @@ UBUNTU_COMMON_APT_DEPENDENCIES = [
     "curl",                 # Used for fetching PhantomJS as wget occasionally fails on redirects
     "netcat",               # Used for flushing memcached
     "moreutils",            # Used for sponge command
-] + VENV_DEPENDENCIES
+] + VENV_DEPENDENCIES + THUMBOR_VENV_DEPENDENCIES
 
 APT_DEPENDENCIES = {
     "stretch": UBUNTU_COMMON_APT_DEPENDENCIES + [
@@ -150,11 +153,12 @@ APT_DEPENDENCIES = {
         "postgresql-9.5",
         "postgresql-9.5-tsearch-extras",
         "postgresql-9.5-pgroonga",
+        "virtualenv",  # see comment on stretch
     ],
     "zesty": UBUNTU_COMMON_APT_DEPENDENCIES + [
         "postgresql-9.6",
         "postgresql-9.6-pgroonga",
-        "virtualenv",
+        "virtualenv",  # see comment on stretch
     ],
 }
 
@@ -196,7 +200,9 @@ def install_apt_deps():
     # type: () -> None
     # setup-apt-repo does an `apt-get update`
     run(["sudo", "./scripts/lib/setup-apt-repo"])
-    run(["sudo", "apt-get", "-y", "install", "--no-install-recommends"] + APT_DEPENDENCIES[codename])
+    # By doing list -> set -> list conversion we remove duplicates.
+    deps_to_install = list(set(APT_DEPENDENCIES[codename]))
+    run(["sudo", "apt-get", "-y", "install", "--no-install-recommends"] + deps_to_install)
 
 def main(options):
     # type: (Any) -> int
@@ -212,7 +218,7 @@ def main(options):
     for apt_depedency in APT_DEPENDENCIES[codename]:
         sha_sum.update(apt_depedency.encode('utf8'))
     # hash the content of setup-apt-repo
-    sha_sum.update(open('scripts/lib/setup-apt-repo').read().encode('utf8'))
+    sha_sum.update(open('scripts/lib/setup-apt-repo', 'rb').read())
 
     new_apt_dependencies_hash = sha_sum.hexdigest()
     last_apt_dependencies_hash = None
@@ -319,7 +325,6 @@ def main(options):
         import django
         django.setup()
 
-        from zerver.lib.str_utils import force_bytes
         from zerver.lib.test_fixtures import is_template_database_current
 
         try:
@@ -359,8 +364,8 @@ def main(options):
         paths += glob.glob('static/locale/*/translations.json')
 
         for path in paths:
-            with open(path, 'r') as file_to_hash:
-                sha1sum.update(force_bytes(file_to_hash.read()))
+            with open(path, 'rb') as file_to_hash:
+                sha1sum.update(file_to_hash.read())
 
         compilemessages_hash_path = os.path.join(UUID_VAR_PATH, "last_compilemessages_hash")
         new_compilemessages_hash = sha1sum.hexdigest()
@@ -374,6 +379,8 @@ def main(options):
             run(["./manage.py", "compilemessages"])
         else:
             print("No need to run `manage.py compilemessages`.")
+
+        run(["./manage.py", "create_realm_internal_bots"])  # Creates realm internal bots if required.
 
     run(["scripts/lib/clean-unused-caches"])
 

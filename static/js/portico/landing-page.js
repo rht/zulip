@@ -1,4 +1,4 @@
-const ELECTRON_APP_VERSION = "1.7.0";
+const ELECTRON_APP_VERSION = "1.9.0";
 const ELECTRON_APP_URL_LINUX = "https://github.com/zulip/zulip-electron/releases/download/v" + ELECTRON_APP_VERSION + "/Zulip-" + ELECTRON_APP_VERSION + "-x86_64.AppImage";
 const ELECTRON_APP_URL_MAC = "https://github.com/zulip/zulip-electron/releases/download/v" + ELECTRON_APP_VERSION + "/Zulip-" + ELECTRON_APP_VERSION + ".dmg";
 const ELECTRON_APP_URL_WINDOWS = "https://github.com/zulip/zulip-electron/releases/download/v" + ELECTRON_APP_VERSION + "/Zulip-Web-Setup-" + ELECTRON_APP_VERSION + ".exe";
@@ -201,14 +201,18 @@ var events = function () {
     $("body").click(function (e) {
         var $e = $(e.target);
 
-
         if ($e.is("nav ul .exit")) {
+            $("nav ul").removeClass("show");
+        }
+
+        if ($("nav ul.show") && !$e.closest("nav ul.show").length && !$e.is("nav ul.show")) {
             $("nav ul").removeClass("show");
         }
     });
 
-    $(".hamburger").click(function () {
+    $(".hamburger").click(function (e) {
         $("nav ul").addClass("show");
+        e.stopPropagation();
     });
 
     if (path_parts().includes("apps")) {
@@ -248,4 +252,12 @@ $(function () {
     if (window.location.pathname === '/team/') {
         render_tabs();
     }
+});
+
+// Prevent Firefox from bfcaching the page.
+// According to https://developer.mozilla.org/en-US/docs/DOM/window.onunload
+// Using this event handler in your page prevents Firefox from caching the
+// page in the in-memory bfcache (backward/forward cache).
+$(window).on('unload', function () {
+    $(window).unbind('unload');
 });

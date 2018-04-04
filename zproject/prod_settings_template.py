@@ -1,9 +1,13 @@
 from typing import Optional
 
-# Zulip Settings intended to be set by a system administrator.
+# Zulip server-level Settings (to be set by the system administrator).
 #
-# See https://zulip.readthedocs.io/en/latest/subsystems/settings.html for
-# detailed technical documentation on the Zulip settings system.
+# Remember to restart the server after changes here!  Documentation at:
+#
+#   https://zulip.readthedocs.io/en/latest/production/settings.html
+#
+# Developer documentation on the Zulip settings system is available at:
+#   https://zulip.readthedocs.io/en/latest/subsystems/settings.html
 #
 ### MANDATORY SETTINGS
 #
@@ -51,10 +55,11 @@ ZULIP_ADMINISTRATOR = 'zulip-admin@example.com'
 #   /home/zulip/deployments/current/manage.py send_test_email username@example.com
 #
 # A common problem is hosting provider firewalls that block outgoing SMTP traffic.
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_HOST_USER = ''
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
+#
+#EMAIL_HOST = 'smtp.example.com'
+#EMAIL_HOST_USER = ''
+#EMAIL_PORT = 587
+#EMAIL_USE_TLS = True
 
 ## OPTIONAL SETTINGS
 
@@ -82,7 +87,7 @@ EMAIL_USE_TLS = True
 # accessing your server by other hostnames, list them here.
 #
 # Note that these should just be hostnames, without port numbers.
-#ALLOWED_HOSTS = ['zulip-alias.example.com']
+#ALLOWED_HOSTS = ['zulip-alias.example.com', '192.0.2.1']
 
 ### AUTHENTICATION SETTINGS
 #
@@ -287,7 +292,7 @@ ENABLE_GRAVATAR = True
 # by sending an email.  This is useful for receiving notifications
 # from third-party services that only send outgoing notifications via
 # email.  Once this integration is configured, each stream will have
-# an email address documented on the stream settings page an emails
+# an email address documented on the stream settings page and emails
 # sent to that address will be delivered into the stream.
 #
 # There are two ways to configure email mirroring in Zulip:
@@ -388,8 +393,10 @@ from django_auth_ldap.config import LDAPSearch, GroupOfNamesType
 AUTH_LDAP_SERVER_URI = ""
 
 # This DN will be used to bind to your server. If unset, anonymous
-# binds are performed.  If set, you need to specify the password as
-# 'auth_ldap_bind_password' in zulip-secrets.conf.
+# binds are performed.
+#
+# If set, you need to specify the password in zulip-secrets.conf ,
+# as 'auth_ldap_bind_password'.
 AUTH_LDAP_BIND_DN = ""
 
 # Specify the search base and the property to filter on that corresponds to the
@@ -407,7 +414,7 @@ LDAP_EMAIL_ATTR = None  # type: Optional[str]
 
 # This map defines how to populate attributes of a Zulip user from LDAP.
 AUTH_LDAP_USER_ATTR_MAP = {
-    # Populate the Django user's name from the LDAP directory.
+    # full_name is required; common values include "cn" or "displayName".
     "full_name": "cn",
 }
 
@@ -446,3 +453,9 @@ CAMO_URI = '/external_content/'
 
 # Controls whether Zulip will rate-limit user requests.
 # RATE_LIMITING = True
+
+# Controls the Jitsi video call integration.  By default, the
+# integration uses the SaaS meet.jit.si server.  You can specify
+# your own Jitsi Meet server, or if you'd like to disable the
+# integration, set JITSI_SERVER_URL = None.
+#JITSI_SERVER_URL = 'jitsi.example.com'

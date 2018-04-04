@@ -26,6 +26,8 @@ function row_for_stream_id(stream_id) {
 }
 
 function settings_button_for_sub(sub) {
+    // We don't do expectOne() here, because this button is only
+    // visible if the user has that stream selected in the streams UI.
     var id = parseInt(sub.stream_id, 10);
     return $(".subscription_settings[data-stream-id='" + id + "'] .subscribe-button");
 }
@@ -125,7 +127,7 @@ exports.update_stream_name = function (sub, new_name) {
     stream_edit.update_stream_name(sub, new_name);
 
     // Update the subscriptions page
-    var sub_row = $(".stream-row[data-stream-id='" + stream_id + "']");
+    var sub_row = row_for_stream_id(stream_id);
     sub_row.find(".stream-name").text(new_name);
 
     // Update the message feed.
@@ -136,7 +138,7 @@ exports.update_stream_description = function (sub, description) {
     sub.description = description;
 
     // Update stream row
-    var sub_row = $('.stream-row[data-stream-id=' + sub.stream_id + ']');
+    var sub_row = row_for_stream_id(sub.stream_id);
     stream_data.render_stream_description(sub);
     sub_row.find(".description").html(sub.rendered_description);
 
@@ -149,38 +151,42 @@ exports.set_color = function (stream_id, color) {
     stream_edit.set_stream_property(sub, 'color', color);
 };
 
-exports.rerender_subscribers_count = function (sub) {
-    var id = parseInt(sub.stream_id, 10);
+exports.rerender_subscribers_count = function (sub, just_subscribed) {
+    if (!overlays.streams_open()) {
+        // If the streams overlay isn't open, we don't need to rerender anything.
+        return;
+    }
+    var stream_row = row_for_stream_id(sub.stream_id);
     stream_data.update_subscribers_count(sub);
-    $(".stream-row[data-stream-id='" + id + "'] .subscriber-count-text").text(sub.subscriber_count);
+    if (!sub.can_access_subscribers || (just_subscribed && sub.invite_only)) {
+        var sub_count = templates.render("subscription_count", sub);
+        stream_row.find('.subscriber-count').expectOne().html(sub_count);
+    } else {
+        stream_row.find(".subscriber-count-text").expectOne().text(sub.subscriber_count);
+    }
 };
 
-function add_email_hint(row, email_address_hint_content) {
+function add_email_hint_handler() {
     // Add a popover explaining stream e-mail addresses on hover.
-    var hint_id = "#email-address-hint-" + row.stream_id;
-    var email_address_hint = $(hint_id);
-    email_address_hint.popover({placement: "bottom",
-                title: "Email integration",
-                content: email_address_hint_content,
-                trigger: "manual"});
 
-    $("body").on("mouseover", hint_id, function (e) {
-        email_address_hint.popover('show');
+    $("body").on("mouseover", '.stream-email-hint', function (e) {
+        var email_address_hint_content = templates.render('email_address_hint', { page_params: page_params });
+        $(e.target).popover({
+            placement: "right",
+            title: "Email integration",
+            content: email_address_hint_content,
+            trigger: "manual",
+            animation: false});
+        $(e.target).popover('show');
         e.stopPropagation();
     });
-    $("body").on("mouseout", hint_id, function (e) {
-        email_address_hint.popover('hide');
+    $("body").on("mouseout", '.stream-email-hint', function (e) {
+        $(e.target).popover('hide');
         e.stopPropagation();
     });
 }
 
-// The `stream_create.get_name()` value tells us whether the stream was just
-// created in this browser window; it's a hack to work around the
-// server_events code flow not having a good way to associate with
-// this request.  These should be appended to the top of the list so
-// they are more visible.
-function add_sub_to_table(sub) {
-    stream_data.update_calculated_fields(sub);
+exports.add_sub_to_table = function (sub) {
     var html = templates.render('subscription', sub);
     var settings_html = templates.render('subscription_settings', sub);
     if (stream_create.get_name() === sub.name) {
@@ -190,15 +196,17 @@ function add_sub_to_table(sub) {
     }
     $(".subscriptions .settings").append($(settings_html));
 
-    var email_address_hint_content = templates.render('email_address_hint', { page_params: page_params });
-    add_email_hint(sub, email_address_hint_content);
-
     if (stream_create.get_name() === sub.name) {
-        var created_stream = stream_create.get_name();
-        $(".stream-row[data-stream-id='" + stream_data.get_sub(created_stream).stream_id + "']").click();
+        // This `stream_create.get_name()` check tells us whether the
+        // stream was just created in this browser window; it's a hack
+        // to work around the server_events code flow not having a
+        // good way to associate with this request because the stream
+        // ID isn't known yet.  These are appended to the top of the
+        // list, so they are more visible.
+        row_for_stream_id(sub.stream_id).click();
         stream_create.reset_created_stream();
     }
-}
+};
 
 exports.remove_stream = function (stream_id) {
     // It is possible that row is empty when we deactivate a
@@ -209,21 +217,22 @@ exports.remove_stream = function (stream_id) {
 
 exports.update_settings_for_subscribed = function (sub) {
     var button = button_for_sub(sub);
-    var settings_button = settings_button_for_sub(sub).removeClass("unsubscribed");
+    var settings_button = settings_button_for_sub(sub).removeClass("unsubscribed").show();
+    $('.add_subscribers_container').show();
 
     if (button.length !== 0) {
-        exports.rerender_subscribers_count(sub);
+        exports.rerender_subscribers_count(sub, true);
 
         button.toggleClass("checked");
         settings_button.text(i18n.t("Unsubscribe"));
 
         stream_edit.add_me_to_member_list(sub);
     } else {
-        add_sub_to_table(sub);
+        exports.add_sub_to_table(sub);
     }
 
     var active_stream = exports.active_stream();
-    if (active_stream !== undefined && active_stream.stream_id === sub.stream_id) {
+    if (active_stream !== undefined && active_stream.id === sub.stream_id) {
         stream_edit.rerender_subscribers_list(sub);
     }
 
@@ -233,7 +242,7 @@ exports.update_settings_for_subscribed = function (sub) {
 
 exports.update_settings_for_unsubscribed = function (sub) {
     var button = button_for_sub(sub);
-    var settings_button = settings_button_for_sub(sub).addClass("unsubscribed");
+    var settings_button = settings_button_for_sub(sub).addClass("unsubscribed").show();
 
     button.toggleClass("checked");
     settings_button.text(i18n.t("Subscribe"));
@@ -243,8 +252,22 @@ exports.update_settings_for_unsubscribed = function (sub) {
     stream_edit.hide_sub_settings(sub);
 
     var active_stream = exports.active_stream();
-    if (active_stream !== undefined && active_stream.stream_id === sub.stream_id) {
+    if (active_stream !== undefined && active_stream.id === sub.stream_id) {
         stream_edit.rerender_subscribers_list(sub);
+
+        // If user unsubscribed from private stream then user cannot subscribe to
+        // stream without invitation and cannot add subscribers to stream.
+        if (!sub.should_display_subscription_button) {
+            settings_button.hide();
+            $('.add_subscribers_container').hide();
+        }
+    }
+
+    // Remove private streams from subscribed streams list.
+    if ($("#subscriptions_table .search-container .tab-switcher .first").hasClass("selected")
+        && sub.invite_only) {
+        var sub_row = row_for_stream_id(sub.stream_id);
+        sub_row.addClass("notdisplayed");
     }
 
     row_for_stream_id(subs.stream_id).attr("data-temp-view", true);
@@ -286,7 +309,8 @@ exports.filter_table = function (query) {
     var selected_row = get_hash_safe().split(/\//)[1];
 
     if (parseFloat(selected_row)) {
-        $(".stream-row[data-stream-id='" + selected_row + "']").addClass("active");
+        var sub_row = row_for_stream_id(selected_row);
+        sub_row.addClass("active");
     }
 
     exports.stream_name_match_stream_ids = [];
@@ -324,6 +348,10 @@ exports.filter_table = function (query) {
             $(row).addClass("notdisplayed");
             others.push($(row).detach());
         }
+
+        $(row).find('.sub-info-box [class$="-bar"] [class$="-count"]').tooltip({
+            placement: 'left', animation: false,
+        });
     });
 
     ui.update_scrollbar($("#subscription_overlay .streams-list"));
@@ -410,10 +438,7 @@ exports.setup_page = function (callback) {
         $('#subscriptions_table').append(rendered);
         initialize_components();
         exports.actually_filter_streams();
-        var email_address_hint_content = templates.render('email_address_hint', { page_params: page_params });
-        _.each(sub_rows, function (row) {
-            add_email_hint(row, email_address_hint_content);
-        });
+        stream_create.set_up_handlers();
 
         $("#add_new_subscription input[type='text']").on("input", function () {
             remove_temporarily_miscategorized_streams();
@@ -477,7 +502,6 @@ exports.change_state = (function () {
         if (hash.arguments.length > 0) {
             // if in #streams/new form.
             if (hash.arguments[0] === "new") {
-                components.toggle.lookup("stream-filter-toggle").goto("all-streams");
                 exports.new_stream_clicked();
             } else if (hash.arguments[0] === "all") {
                 components.toggle.lookup("stream-filter-toggle").goto("all-streams");
@@ -485,7 +509,7 @@ exports.change_state = (function () {
                 components.toggle.lookup("stream-filter-toggle").goto("subscribed");
             // if the first argument is a valid number.
             } else if (/\d+/.test(hash.arguments[0])) {
-                var stream_row = $(".stream-row[data-stream-id='" + hash.arguments[0] + "']");
+                var stream_row = row_for_stream_id(hash.arguments[0]);
                 var streams_list = $(".streams-list")[0];
 
                 get_active_data().row.removeClass("active");
@@ -612,7 +636,7 @@ exports.view_stream = function () {
     var active_data = get_active_data();
     var row_data = get_row_data(active_data.row);
     if (row_data) {
-        window.location.hash = '#narrow/stream/' + row_data.object.name;
+        window.location.hash = '#narrow/stream/' + hash_util.encode_stream_name(row_data.object.name);
     }
 };
 
@@ -633,13 +657,13 @@ function ajaxSubscribe(stream) {
                 // Display the canonical stream capitalization.
                 true_stream_name = res.already_subscribed[people.my_current_email()][0];
                 ui_report.success(i18n.t("Already subscribed to __stream__", {stream: true_stream_name}),
-                                  $("#subscriptions-status"), 'subscriptions-status');
+                                  $(".stream_change_property_info"));
             }
             // The rest of the work is done via the subscribe event we will get
         },
         error: function (xhr) {
             ui_report.error(i18n.t("Error adding subscription"), xhr,
-                            $("#subscriptions-status"), 'subscriptions-status');
+                            $(".stream_change_property_info"));
         },
     });
 }
@@ -650,12 +674,12 @@ function ajaxUnsubscribe(sub) {
         url: "/json/users/me/subscriptions",
         data: {subscriptions: JSON.stringify([sub.name]) },
         success: function () {
-            $("#subscriptions-status").hide();
+            $(".stream_change_property_info").hide();
             // The rest of the work is done via the unsubscribe event we will get
         },
         error: function (xhr) {
             ui_report.error(i18n.t("Error removing subscription"), xhr,
-                            $("#subscriptions-status"), 'subscriptions-status');
+                            $(".stream_change_property_info"));
         },
     });
 }
@@ -683,7 +707,6 @@ exports.sub_or_unsub = function (sub) {
 
 
 $(function () {
-
     stream_data.initialize_from_page_params();
     stream_list.create_initial_sidebar_rows();
 
@@ -691,9 +714,14 @@ $(function () {
     // when new messages come in, but it's fairly quick.
     stream_list.build_stream_list();
 
+    add_email_hint_handler();
+
     $("#subscriptions_table").on("click", ".create_stream_button", function (e) {
         e.preventDefault();
         exports.new_stream_clicked();
+        // this will change the hash which will attempt to retrigger the create
+        // stream code, so we prevent this once.
+        exports.change_state.prevent_once();
     });
 
     $(".subscriptions").on("click", "[data-dismiss]", function (e) {
@@ -710,10 +738,6 @@ $(function () {
         $(e.target).addClass("btn-danger").text(i18n.t("Unsubscribe"));
     }).on("mouseout", ".subscribed-button", function (e) {
         $(e.target).removeClass("btn-danger").text(i18n.t("Subscribed"));
-    });
-
-    $(".subscriptions").on("click", "#close-subscriptions-status", function () {
-        $("#subscriptions-status").hide();
     });
 
     $("#subscriptions_table").on("click", ".email-address", function () {

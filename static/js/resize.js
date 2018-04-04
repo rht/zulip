@@ -203,9 +203,7 @@ exports.watch_manual_resize = function (element) {
 };
 
 exports.resize_bottom_whitespace = function (h) {
-    if (page_params.autoscroll_forever) {
-        $("#bottom_whitespace").height($("#compose-container")[0].offsetHeight);
-    } else if (h !== undefined) {
+    if (h !== undefined) {
         $("#bottom_whitespace").height(h.bottom_whitespace_height);
     }
 };
@@ -214,7 +212,7 @@ exports.resize_stream_filters_container = function (h) {
     h = narrow_window ? left_userlist_get_new_heights() : get_new_heights();
     exports.resize_bottom_whitespace(h);
     $("#stream-filters-container").css('max-height', h.stream_filters_max_height);
-    $('#stream-filters-container').perfectScrollbar('update');
+    ui.update_scrollbar($("#stream-filters-container"));
 };
 
 exports.resize_page_components = function () {
@@ -257,15 +255,13 @@ exports.resize_page_components = function () {
     $("#user_presences").css('max-height', h.user_presences_max_height);
     $("#group-pms").css('max-height', h.group_pms_max_height);
 
-    $("#stream-filters-container")
-        .css('max-height', h.stream_filters_max_height)
-        // the `.css` method returns `$this`, so we can chain `perfectScrollbar`.
-        .perfectScrollbar('update');
+    $("#stream-filters-container").css('max-height', h.stream_filters_max_height);
+    ui.update_scrollbar($("#stream-filters-container"));
 
     activity.update_scrollbar.users();
     activity.update_scrollbar.group_pms();
 
-    desktop_notifications_panel.resize_app();
+    panels.resize_app();
 };
 
 var _old_width = $(window).width();
@@ -280,6 +276,9 @@ exports.handler = function () {
 
     popovers.hide_all();
     exports.resize_page_components();
+
+    // Re-compute and display/remove [More] links to messages
+    condense.condense_and_collapse($("div.message_row"));
 
     // This function might run onReady (if we're in a narrow window),
     // but before we've loaded in the messages; in that case, don't

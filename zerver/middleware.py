@@ -26,6 +26,7 @@ from zerver.lib.queue import queue_json_publish
 from zerver.lib.response import json_error, json_response_from_error
 from zerver.lib.subdomains import get_subdomain
 from zerver.lib.utils import statsd
+from zerver.lib.types import ViewFuncT
 from zerver.models import Realm, flush_per_request_caches, get_realm
 
 logger = logging.getLogger('zulip.requests')
@@ -231,7 +232,7 @@ class LogRequests(MiddlewareMixin):
         if connection.connection is not None:
             connection.connection.queries = []
 
-    def process_view(self, request: HttpRequest, view_func: Callable[..., HttpResponse],
+    def process_view(self, request: HttpRequest, view_func: ViewFuncT,
                      args: List[str], kwargs: Dict[str, Any]) -> None:
         # process_request was already run; we save the initialization
         # time (i.e. the time between receiving the request and
@@ -278,12 +279,12 @@ class JsonErrorHandler(MiddlewareMixin):
         if isinstance(exception, JsonableError):
             return json_response_from_error(exception)
         if request.error_format == "JSON":
-            logging.error(traceback.format_exc())
+            logging.error(traceback.format_exc(), extra=dict(request=request))
             return json_error(_("Internal server error"), status=500)
         return None
 
 class TagRequests(MiddlewareMixin):
-    def process_view(self, request: HttpRequest, view_func: Callable[..., HttpResponse],
+    def process_view(self, request: HttpRequest, view_func: ViewFuncT,
                      args: List[str], kwargs: Dict[str, Any]) -> None:
         self.process_request(request)
 

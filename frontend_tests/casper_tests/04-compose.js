@@ -44,13 +44,13 @@ casper.then(function () {
         casper.test.assertVisible('#stream-message', 'Stream input box visible');
         common.check_form('#send_message_form', {stream: '', subject: ''}, "Stream empty on new compose");
         casper.click('body');
-        casper.page.sendEvent('keypress', "C");
+        casper.page.sendEvent('keypress', "x");
     });
 });
 
 casper.then(function () {
     casper.waitUntilVisible('#private_message_recipient', function () {
-        common.check_form('#send_message_form', {recipient: ''}, "Recipient empty on new PM");
+        common.pm_recipient.expect("");
         casper.click('body');
         casper.page.sendEvent('keypress', 'c');
     });
@@ -82,7 +82,7 @@ casper.then(function () {
 
 casper.then(function () {
     casper.waitUntilVisible('#private_message_recipient', function () {
-        common.check_form('#send_message_form', {recipient: "cordelia@zulip.com"}, "Recipient populated after PM click");
+        common.pm_recipient.expect("cordelia@zulip.com");
 
         common.keypress(27); //escape
         casper.page.sendEvent('keypress', 'k');
@@ -102,7 +102,7 @@ casper.then(function () {
 casper.then(function () {
     casper.waitWhileVisible('#stream-message', function () {
         casper.test.assertNotVisible('#stream-message', 'Close stream compose box');
-        casper.page.sendEvent('keypress', "C");
+        casper.page.sendEvent('keypress', "x");
         casper.click('body');
     });
 });
@@ -151,13 +151,7 @@ casper.waitUntilVisible('#zhome', function () {
 
 casper.then(function () {
     casper.waitUntilVisible('#compose', function () {
-        // It may be possible to get the textbox contents with CasperJS,
-        // but it's easier to just evaluate jQuery in page context here.
-        var displayed_recipients = casper.evaluate(function () {
-            return $('#private_message_recipient').val();
-        });
-        casper.test.assertEquals(displayed_recipients, recipients.join(', '),
-            'Recipients are displayed correctly in a huddle reply');
+        common.pm_recipient.expect(recipients.join(','));
     });
 });
 

@@ -15,6 +15,7 @@ import os
 import platform
 import time
 import sys
+from typing import Optional
 import configparser
 
 from zerver.lib.db import TimeTrackingConnection
@@ -39,7 +40,7 @@ if PRODUCTION:
 else:
     secrets_file.read(os.path.join(DEPLOY_ROOT, "zproject/dev-secrets.conf"))
 
-def get_secret(key: str) -> None:
+def get_secret(key: str) -> Optional[str]:
     if secrets_file.has_option('secrets', key):
         return secrets_file.get('secrets', key)
     return None
@@ -118,9 +119,13 @@ DEFAULT_SETTINGS = {
     'ALLOWED_HOSTS': [],
 
     # Basic email settings
-    'EMAIL_HOST': None,
     'NOREPLY_EMAIL_ADDRESS': "noreply@" + EXTERNAL_HOST.split(":")[0],
     'PHYSICAL_ADDRESS': '',
+
+    # SMTP settings
+    'EMAIL_HOST': None,
+    # Other settings, like EMAIL_HOST_USER, EMAIL_PORT, and EMAIL_USE_TLS,
+    # we leave up to Django's defaults.
 
     # Google auth
     'GOOGLE_OAUTH2_CLIENT_ID': None,
@@ -155,6 +160,9 @@ DEFAULT_SETTINGS = {
     'LOCAL_UPLOADS_DIR': None,
     'MAX_FILE_UPLOAD_SIZE': 25,
 
+    # JITSI video call integration; set to None to disable integration.
+    'JITSI_SERVER_URL': 'https://meet.jit.si/',
+
     # Feedback bot settings
     'ENABLE_FEEDBACK': PRODUCTION,
     'FEEDBACK_EMAIL': None,
@@ -168,12 +176,14 @@ DEFAULT_SETTINGS = {
     # External service configuration
     'CAMO_URI': '',
     'MEMCACHED_LOCATION': '127.0.0.1:11211',
-    'RABBITMQ_HOST': 'localhost',
+    'RABBITMQ_HOST': '127.0.0.1',
     'RABBITMQ_USERNAME': 'zulip',
     'REDIS_HOST': '127.0.0.1',
     'REDIS_PORT': 6379,
     'REMOTE_POSTGRES_HOST': '',
     'REMOTE_POSTGRES_SSLMODE': '',
+    'THUMBOR_HOST': '',
+    'SENDFILE_BACKEND': None,
 
     # ToS/Privacy templates
     'PRIVACY_POLICY': None,
@@ -195,6 +205,10 @@ DEFAULT_SETTINGS = {
 
     # Two Factor Authentication is not yet implementation-complete
     'TWO_FACTOR_AUTHENTICATION_ENABLED': False,
+
+    # This is used to send all hotspots for convenient manual testing
+    # in development mode.
+    'ALWAYS_SEND_ALL_HOTSPOTS': False,
 }
 
 # These settings are not documented in prod_settings_template.py.
@@ -215,9 +229,6 @@ DEFAULT_SETTINGS.update({
     # ERROR_BOT sends Django exceptions to an "errors" stream in the
     # system realm.
     'ERROR_BOT': None,
-    # NEW_USER_BOT sends notifications about new user signups to a
-    # "signups" stream in the system realm.
-    'NEW_USER_BOT': None,
     # These are extra bot users for our end-to-end Nagios message
     # sending tests.
     'NAGIOS_STAGING_SEND_BOT': None,
@@ -272,9 +283,18 @@ DEFAULT_SETTINGS.update({
     # available for sysadmin override in unusual cases.
     'EMAIL_BACKEND': None,
 
+    # Whether to give admins a warning in the web app that email isn't set up.
+    # Set below when email isn't configured.
+    'WARN_NO_EMAIL': False,
+
     # Whether to keep extra frontend stack trace data.
     # TODO: Investigate whether this should be removed and set one way or other.
     'SAVE_FRONTEND_STACKTRACES': False,
+
+    # If True, disable rate-limiting and other filters on sending error messages
+    # to admins, and enable logging on the error-reporting itself.  Useful
+    # mainly in development.
+    'DEBUG_ERROR_REPORTING': False,
 
     # Whether to flush memcached after data migrations.  Because of
     # how we do deployments in a way that avoids reusing memcached,
@@ -283,7 +303,6 @@ DEFAULT_SETTINGS.update({
 
     # Settings for APNS.  Only needed on push.zulipchat.com.
     'APNS_CERT_FILE': None,
-    'APNS_KEY_FILE': None,
     'APNS_SANDBOX': True,
 
     # Limits related to the size of file uploads; last few in MB.
@@ -291,6 +310,19 @@ DEFAULT_SETTINGS.update({
     'MAX_AVATAR_FILE_SIZE': 5,
     'MAX_ICON_FILE_SIZE': 5,
     'MAX_EMOJI_FILE_SIZE': 5,
+
+    # Limits to help prevent spam, in particular by sending invitations.
+    #
+    # A non-admin user who's joined an open realm this recently can't invite at all.
+    'INVITES_MIN_USER_AGE_DAYS': 3,
+    # Default for a realm's `max_invites`; which applies per day,
+    # and only applies if OPEN_REALM_CREATION is true.
+    'INVITES_DEFAULT_REALM_DAILY_MAX': 100,
+    # Global rate-limit (list of pairs (days, max)) on invites from new realms.
+    # Only applies if OPEN_REALM_CREATION is true.
+    'INVITES_NEW_REALM_LIMIT_DAYS': [(1, 100)],
+    # Definition of a new realm for INVITES_NEW_REALM_LIMIT.
+    'INVITES_NEW_REALM_DAYS': 7,
 
     # Controls for which links are published in portico footers/headers/etc.
     'EMAIL_DELIVERER_DISABLED': False,
@@ -345,6 +377,9 @@ DEFAULT_SETTINGS.update({
     # because some transactional email providers reject sending such
     # emails since they can look like spam.
     'SEND_MISSED_MESSAGE_EMAILS_AS_USER': False,
+    # Whether to send periodic digests of activity.  Off by default
+    # because this feature is in beta.
+    'SEND_DIGEST_EMAILS': False,
 
     # Used to change the Zulip logo in portico pages.
     'CUSTOM_LOGO_URL': None,
@@ -602,7 +637,7 @@ CACHES = {
 ########################################################################
 
 RATE_LIMITING_RULES = [
-    (60, 100),  # 100 requests max every minute
+    (60, 200),  # 200 requests max every minute
 ]
 DEBUG_RATE_LIMITING = DEBUG
 REDIS_PASSWORD = get_secret('redis_password')
@@ -661,6 +696,12 @@ if "NAGIOS_BOT_HOST" not in vars():
 S3_KEY = get_secret("s3_key")
 S3_SECRET_KEY = get_secret("s3_secret_key")
 
+if LOCAL_UPLOADS_DIR is not None:
+    if SENDFILE_BACKEND is None:
+        SENDFILE_BACKEND = 'sendfile.backends.nginx'
+    SENDFILE_ROOT = os.path.join(LOCAL_UPLOADS_DIR, "files")
+    SENDFILE_URL = '/serve_uploads'
+
 # GCM tokens are IP-whitelisted; if we deploy to additional
 # servers you will need to explicitly add their IPs here:
 # https://cloud.google.com/console/project/apps~zulip-android/apiui/credential
@@ -697,6 +738,10 @@ INTERNAL_BOTS = [{'var_name': 'NOTIFICATION_BOT',
                   'email_template': 'welcome-bot@%s',
                   'name': 'Welcome Bot'}]
 
+REALM_INTERNAL_BOTS = [{'var_name': 'REMINDER_BOT',
+                        'email_template': 'reminder-bot@%s',
+                        'name': 'Reminder Bot'}]
+
 if PRODUCTION:
     INTERNAL_BOTS += [
         {'var_name': 'NAGIOS_STAGING_SEND_BOT',
@@ -710,7 +755,7 @@ if PRODUCTION:
 INTERNAL_BOT_DOMAIN = "zulip.com"
 
 # Set the realm-specific bot names
-for bot in INTERNAL_BOTS:
+for bot in INTERNAL_BOTS + REALM_INTERNAL_BOTS:
     if vars().get(bot['var_name']) is None:
         bot_email = bot['email_template'] % (INTERNAL_BOT_DOMAIN,)
         vars()[bot['var_name']] = bot_email
@@ -805,7 +850,10 @@ PIPELINE = {
         # If you add a style here, please update stylesheets()
         # in frontend_tests/zjsunit/output.js as needed.
         'activity': {
-            'source_filenames': ('styles/activity.css',),
+            'source_filenames': (
+                'styles/activity.css',
+                'third/thirdparty-fonts.css',
+            ),
             'output_filename': 'min/activity.css'
         },
         'stats': {
@@ -838,6 +886,8 @@ PIPELINE = {
                 'third/spectrum/spectrum.css',
                 'third/thirdparty-fonts.css',
                 'generated/icons/style.css',
+                'node_modules/flatpickr/dist/flatpickr.css',
+                'node_modules/flatpickr/dist/plugins/confirmDate/confirmDate.css',
                 'styles/components.css',
                 'styles/app_components.css',
                 'styles/zulip.css',
@@ -857,7 +907,7 @@ PIPELINE = {
                 'styles/media.css',
                 'styles/typing_notifications.css',
                 'styles/hotspots.css',
-                'styles/dark.css',
+                'styles/night_mode.css',
                 # We don't want fonts.css on QtWebKit, so its omitted here
             ),
             'output_filename': 'min/app-fontcompat.css'
@@ -869,6 +919,8 @@ PIPELINE = {
                 'third/thirdparty-fonts.css',
                 'generated/icons/style.css',
                 'node_modules/katex/dist/katex.css',
+                'node_modules/flatpickr/dist/flatpickr.css',
+                'node_modules/flatpickr/dist/plugins/confirmDate/confirmDate.css',
                 'styles/components.css',
                 'styles/app_components.css',
                 'styles/zulip.css',
@@ -889,7 +941,7 @@ PIPELINE = {
                 'styles/media.css',
                 'styles/typing_notifications.css',
                 'styles/hotspots.css',
-                'styles/dark.css',
+                'styles/night_mode.css',
             ),
             'output_filename': 'min/app.css'
         },
@@ -898,7 +950,7 @@ PIPELINE = {
                 'third/bootstrap/css/bootstrap.css',
                 'third/bootstrap/css/bootstrap-btn.css',
                 'third/bootstrap/css/bootstrap-responsive.css',
-                'node_modules/perfect-scrollbar/dist/css/perfect-scrollbar.css',
+                'node_modules/perfect-scrollbar/css/perfect-scrollbar.css',
             ),
             'output_filename': 'min/common.css'
         },
@@ -947,7 +999,7 @@ JS_SPECS = {
             'third/jquery-throttle-debounce/jquery.ba-throttle-debounce.js',
             'third/jquery-idle/jquery.idle.js',
             'third/jquery-autosize/jquery.autosize.js',
-            'node_modules/perfect-scrollbar/dist/js/perfect-scrollbar.jquery.js',
+            'node_modules/perfect-scrollbar/dist/perfect-scrollbar.js',
             'third/lazyload/lazyload.js',
             'third/spectrum/spectrum.js',
             'third/sockjs/sockjs-0.3.4.js',
@@ -955,6 +1007,8 @@ JS_SPECS = {
             'node_modules/winchan/winchan.js',
             'node_modules/handlebars/dist/handlebars.runtime.js',
             'node_modules/to-markdown/dist/to-markdown.js',
+            'node_modules/flatpickr/dist/flatpickr.js',
+            'node_modules/flatpickr/dist/plugins/confirmDate/confirmDate.js',
             'third/marked/lib/marked.js',
             'generated/emoji/emoji_codes.js',
             'generated/pygments_data.js',
@@ -970,6 +1024,8 @@ JS_SPECS = {
             'js/localstorage.js',
             'js/drafts.js',
             'js/input_pill.js',
+            'js/user_pill.js',
+            'js/compose_pm_pill.js',
             'js/channel.js',
             'js/setup.js',
             'js/unread_ui.js',
@@ -990,6 +1046,7 @@ JS_SPECS = {
             'js/top_left_corner.js',
             'js/stream_list.js',
             'js/filter.js',
+            'js/fetch_status.js',
             'js/message_list_view.js',
             'js/message_list.js',
             'js/message_live_update.js',
@@ -1004,6 +1061,7 @@ JS_SPECS = {
             'js/sent_messages.js',
             'js/compose_state.js',
             'js/compose_actions.js',
+            'js/transmit.js',
             'js/compose.js',
             'js/upload.js',
             'js/stream_color.js',
@@ -1021,6 +1079,8 @@ JS_SPECS = {
             'js/floating_recipient_bar.js',
             'js/lightbox.js',
             'js/ui_report.js',
+            'js/message_scroll.js',
+            'js/info_overlay.js',
             'js/ui.js',
             'js/night_mode.js',
             'js/ui_util.js',
@@ -1079,12 +1139,13 @@ JS_SPECS = {
             'js/settings_streams.js',
             'js/settings_filters.js',
             'js/settings_invites.js',
+            'js/settings_user_groups.js',
+            'js/settings_profile_fields.js',
             'js/settings.js',
             'js/admin_sections.js',
             'js/admin.js',
             'js/tab_bar.js',
             'js/emoji.js',
-            'js/custom_markdown.js',
             'js/bot_data.js',
             'js/reactions.js',
             'js/typing.js',
@@ -1094,7 +1155,8 @@ JS_SPECS = {
             'js/ui_init.js',
             'js/emoji_picker.js',
             'js/compose_ui.js',
-            'js/desktop_notifications_panel.js'
+            'js/panels.js',
+            'js/settings_ui.js'
         ],
         'output_filename': 'min/app.js'
     },
@@ -1102,7 +1164,28 @@ JS_SPECS = {
     'sockjs': {
         'source_filenames': ['third/sockjs/sockjs-0.3.4.js'],
         'output_filename': 'min/sockjs-0.3.4.min.js'
-    }
+    },
+    # Even though we've moved the main KaTeX copy into Webpack, we
+    # also need KaTeX to be runnable directly via Node (Called from
+    # zerver/lib/tex.py which calls static/third/katex/cli.js.  Since
+    # our Webpack setup doesn't provide a good way to name the current
+    # version of a module, we use the legacy django-pipeline system
+    # for bundling KaTeX.
+    'katex': {
+        'source_filenames': [
+            'node_modules/katex/dist/katex.js',
+        ],
+        'output_filename': 'min/katex.js',
+    },
+    # The same legacy treatment is required for zxcvbn, in order to
+    # support the settings_account.js use case (where we don't have a
+    # good way to look up the path to the file).
+    'zxcvbn': {
+        'source_filenames': [
+            'node_modules/zxcvbn/dist/zxcvbn.js',
+        ],
+        'output_filename': 'min/zxcvbn.js'
+    },
 }
 
 app_srcs = JS_SPECS['app']['source_filenames']
@@ -1202,6 +1285,8 @@ ZULIP_PATHS = [
     ("API_KEY_ONLY_WEBHOOK_LOG_PATH", "/var/log/zulip/webhooks_errors.log"),
     ("SOFT_DEACTIVATION_LOG_PATH", "/var/log/zulip/soft_deactivation.log"),
     ("TRACEMALLOC_DUMP_DIR", "/var/log/zulip/tracemalloc"),
+    ("SCHEDULED_MESSAGE_DELIVERER_LOG_PATH",
+     "/var/log/zulip/scheduled_message_deliverer.log"),
 ]
 
 # The Event log basically logs most significant database changes,
@@ -1227,8 +1312,9 @@ if IS_WORKER:
     FILE_LOG_PATH = WORKER_LOG_PATH
 else:
     FILE_LOG_PATH = SERVER_LOG_PATH
-# Used for test_logging_handlers
-LOGGING_NOT_DISABLED = True
+
+# This is disabled in a few tests.
+LOGGING_ENABLED = True
 
 DEFAULT_ZULIP_HANDLERS = (
     (['zulip_admins'] if ERROR_REPORTING else []) +
@@ -1281,9 +1367,9 @@ LOGGING = {
     'handlers': {
         'zulip_admins': {
             'level': 'ERROR',
-            'class': 'zerver.logging_handlers.AdminZulipHandler',
-            # For testing the handler delete the next line
-            'filters': ['ZulipLimiter', 'require_debug_false', 'require_really_deployed'],
+            'class': 'zerver.logging_handlers.AdminNotifyHandler',
+            'filters': (['ZulipLimiter', 'require_debug_false', 'require_really_deployed']
+                        if not DEBUG_ERROR_REPORTING else []),
             'formatter': 'default'
         },
         'console': {
@@ -1370,8 +1456,19 @@ LOGGING = {
         # },
 
         # other libraries, alphabetized
-        'pika.adapters': {  # This library is super chatty on INFO.
+        'pika.adapters': {
+            # pika is super chatty on INFO.
             'level': 'WARNING',
+            # pika spews a lot of ERROR logs when a connection fails.
+            # We reconnect automatically, so those should be treated as WARNING --
+            # write to the log for use in debugging, but no error emails/Zulips.
+            'handlers': ['console', 'file', 'errors_file'],
+            'propagate': False,
+        },
+        'pika.connection': {
+            # Leave `zulip_admins` out of the handlers.  See pika.adapters above.
+            'handlers': ['console', 'file', 'errors_file'],
+            'propagate': False,
         },
         'requests': {
             'level': 'WARNING',
@@ -1396,6 +1493,9 @@ LOGGING = {
             'level': 'DEBUG',
         },
         'zerver.management.commands.enqueue_digest_emails': {
+            'level': 'DEBUG',
+        },
+        'zerver.management.commands.deliver_scheduled_messages': {
             'level': 'DEBUG',
         },
         'zulip.management': {
@@ -1495,12 +1595,13 @@ DEFAULT_FROM_EMAIL = ZULIP_ADMINISTRATOR
 if EMAIL_BACKEND is not None:
     # If the server admin specified a custom email backend, use that.
     pass
-elif not EMAIL_HOST and PRODUCTION:
-    # If an email host is not specified, fail silently and gracefully
-    EMAIL_BACKEND = 'django.core.mail.backends.dummy.EmailBackend'
 elif DEVELOPMENT:
     # In the dev environment, emails are printed to the run-dev.py console.
     EMAIL_BACKEND = 'zproject.email_backends.EmailLogBackEnd'
+elif not EMAIL_HOST:
+    # If an email host is not specified, fail gracefully
+    WARN_NO_EMAIL = True
+    EMAIL_BACKEND = 'django.core.mail.backends.dummy.EmailBackend'
 else:
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 

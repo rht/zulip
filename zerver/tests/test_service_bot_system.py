@@ -13,7 +13,7 @@ from zerver.lib.actions import (
 )
 from zerver.lib.bot_lib import StateHandler, EmbeddedBotHandler
 from zerver.lib.bot_storage import StateError
-from zerver.lib.bot_config import set_bot_config, ConfigError
+from zerver.lib.bot_config import set_bot_config, ConfigError, load_bot_config_template
 from zerver.lib.test_classes import ZulipTestCase
 from zerver.models import (
     get_realm,
@@ -274,21 +274,28 @@ class TestServiceBotStateHandler(ZulipTestCase):
 class TestServiceBotConfigHandler(ZulipTestCase):
     def setUp(self) -> None:
         self.user_profile = self.example_user("othello")
-        self.bot_profile = self.create_test_bot('embedded-bot@zulip.testserver', self.user_profile, 'Embedded bot',
-                                                'embedded', UserProfile.EMBEDDED_BOT, service_name='helloworld')
+        self.bot_profile = self.create_test_bot('embedded', self.user_profile,
+                                                full_name='Embedded bot',
+                                                bot_type=UserProfile.EMBEDDED_BOT,
+                                                service_name='helloworld')
         self.bot_handler = EmbeddedBotHandler(self.bot_profile)
 
     def test_basic_storage_and_retrieval(self) -> None:
+        with self.assertRaises(ConfigError):
+            self.bot_handler.get_config_info('foo')
+
+        self.assertEqual(self.bot_handler.get_config_info('foo', optional=True), dict())
+
         config_dict = {"entry 1": "value 1", "entry 2": "value 2"}
         for key, value in config_dict.items():
             set_bot_config(self.bot_profile, key, value)
-        self.assertEqual(self.bot_handler.get_config_info(), config_dict)
+        self.assertEqual(self.bot_handler.get_config_info('foo'), config_dict)
 
         config_update = {"entry 2": "new value", "entry 3": "value 3"}
         for key, value in config_update.items():
             set_bot_config(self.bot_profile, key, value)
         config_dict.update(config_update)
-        self.assertEqual(self.bot_handler.get_config_info(), config_dict)
+        self.assertEqual(self.bot_handler.get_config_info('foo'), config_dict)
 
     @override_settings(BOT_CONFIG_SIZE_LIMIT=100)
     def test_config_entry_limit(self) -> None:
@@ -303,6 +310,17 @@ class TestServiceBotConfigHandler(ZulipTestCase):
                                  "Cannot store configuration. Request would require 116 characters. "
                                  "The current configuration size limit is 100 characters.",
                                  lambda: set_bot_config(self.bot_profile, "yet another key", 'x'))
+
+    def test_load_bot_config_template(self) -> None:
+        bot_config = load_bot_config_template('giphy')
+        self.assertTrue(isinstance(bot_config, dict))
+        self.assertEqual(len(bot_config), 1)
+
+    def test_load_bot_config_template_for_bot_without_config_data(self) -> None:
+        bot_config = load_bot_config_template('converter')
+        self.assertTrue(isinstance(bot_config, dict))
+        self.assertEqual(len(bot_config), 0)
+
 
 class TestServiceBotEventTriggers(ZulipTestCase):
 

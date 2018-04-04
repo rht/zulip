@@ -1,14 +1,21 @@
 set_global("page_params", {
     realm_uri: "https://chat.example.com",
+    realm_embedded_bots: [{name: "converter", config: {}},
+                          {name:"giphy", config: {key: "12345678"}},
+                          {name:"foobot", config: {bar: "baz", qux: "quux"}},
+                         ],
 });
 
 set_global("avatar", {});
 
 set_global('$', global.make_zjquery());
+set_global('i18n', global.stub_i18n);
 set_global('document', 'document-stub');
 
 zrequire('bot_data');
 zrequire('settings_bots');
+zrequire('Handlebars', 'handlebars');
+zrequire('templates');
 
 (function test_generate_zuliprc_uri() {
     var bot = {
@@ -54,18 +61,30 @@ zrequire('settings_bots');
 function test_create_bot_type_input_box_toggle(f) {
     var create_payload_url = $('#create_payload_url');
     var payload_url_inputbox = $('#payload_url_inputbox');
+    var config_inputbox = $('#config_inputbox');
+    var EMBEDDED_BOT_TYPE = '4';
     var OUTGOING_WEBHOOK_BOT_TYPE = '3';
     var GENERIC_BOT_TYPE = '1';
+
+    $('#create_bot_type :selected').val(EMBEDDED_BOT_TYPE);
+    f.apply();
+    assert(!create_payload_url.hasClass('required'));
+    assert(!payload_url_inputbox.visible());
+    assert($('#select_service_name').hasClass('required'));
+    assert($('#service_name_list').visible());
+    assert(config_inputbox.visible());
 
     $('#create_bot_type :selected').val(OUTGOING_WEBHOOK_BOT_TYPE);
     f.apply();
     assert(create_payload_url.hasClass('required'));
     assert(payload_url_inputbox.visible());
+    assert(!config_inputbox.visible());
 
     $('#create_bot_type :selected').val(GENERIC_BOT_TYPE);
     f.apply();
     assert(!(create_payload_url.hasClass('required')));
     assert(!payload_url_inputbox.visible());
+    assert(!config_inputbox.visible());
 }
 
 (function test_set_up() {
@@ -83,8 +102,18 @@ function test_create_bot_type_input_box_toggle(f) {
         }
     };
 
+    $('#config_inputbox').children = function () {
+        var mock_children = {
+            hide: function () {
+                return;
+            },
+        };
+        return mock_children;
+    };
+    global.compile_template('embedded_bot_config_item');
     avatar.build_bot_create_widget = function () {};
     avatar.build_bot_edit_widget = function () {};
+    settings_bots.setup_bot_creation_policy_values();
 
     settings_bots.set_up();
 }());

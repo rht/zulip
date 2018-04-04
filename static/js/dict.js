@@ -1,5 +1,9 @@
 /* Constructs a new Dict object.
  *
+ * This module primarily exists to support the fold_case option,
+ * because so many string keys in Zulip are case-insensitive (emails,
+ * stream names, topics, etc.).
+ *
  * Dict(opt) -> the new Dict will be empty
  *
  * Available options:
@@ -53,7 +57,7 @@ Dict.prototype = {
     _munge: function Dict__munge(k) {
         if (k === undefined) {
             blueslip.error("Tried to call a Dict method with an undefined key.");
-            return undefined;
+            return;
         }
         if (this._opts.fold_case) {
             k = k.toLowerCase();
@@ -70,7 +74,7 @@ Dict.prototype = {
     get: function Dict_get(key) {
         var mapping = this._items[this._munge(key)];
         if (mapping === undefined) {
-            return undefined;
+            return;
         }
         return mapping.v;
     },

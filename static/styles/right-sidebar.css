@@ -8,7 +8,8 @@
 }
 
 #group-pms li:hover,
-#user_presences li:hover {
+#user_presences li:hover,
+#user_presences li.highlighted_user {
     background-color: hsl(93, 19%, 88%);
 }
 
@@ -85,7 +86,7 @@
     filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#ffffff', endColorstr='#ec7e18',GradientType=0 ); /* IE6-9 */
 }
 
-.user_offline .user-status-indicator {
+.user-status-indicator {
     background-color: none;
     border-color: hsl(0, 0%, 50%);
 }
@@ -211,6 +212,18 @@
 
 .sidebar-items:first-of-type #userlist-header {
     border-top: none;
+}
+
+#userlist-header {
+    cursor: pointer;
+}
+
+#user_filter_icon {
+    float: right;
+    font-size: 13px;
+    opacity: 0.50;
+    margin-top: 3px;
+    margin-right: 10px;
 }
 
 #feedback_section {

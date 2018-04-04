@@ -31,6 +31,7 @@ function maybe_add_narrowed_messages(messages, msg_list, messages_are_new) {
                 }
             });
 
+            _.each(new_messages, message_store.set_message_booleans);
             new_messages = _.map(new_messages, message_store.add_message_metadata);
             message_util.add_messages(
                 new_messages,
@@ -125,13 +126,16 @@ exports.update_messages = function update_messages(events) {
         }
         msgs_to_rerender.push(msg);
 
-        msg.flags = event.flags;
-        message_store.set_message_booleans(msg, event.flags);
+        message_store.update_booleans(msg, event.flags);
 
         condense.un_cache_message_content_height(msg.id);
 
         if (event.rendered_content !== undefined) {
             msg.content = event.rendered_content;
+        }
+
+        if (event.is_me_message !== undefined) {
+            msg.is_me_message = event.is_me_message;
         }
 
         var row = current_msg_list.get_row(event.message_id);

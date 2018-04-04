@@ -11,7 +11,7 @@ import ujson
 
 from zerver.lib import bugdown
 from zerver.lib.integrations import CATEGORIES, INTEGRATIONS, HubotIntegration, \
-    WebhookIntegration
+    WebhookIntegration, EmailIntegration
 from zerver.lib.request import has_request_variables, REQ
 from zerver.lib.subdomains import get_subdomain
 from zerver.models import Realm
@@ -31,6 +31,7 @@ def add_api_uri_context(context: Dict[str, Any], request: HttpRequest) -> None:
     api_url_scheme_relative = display_host + "/api"
     api_url = settings.EXTERNAL_URI_SCHEME + api_url_scheme_relative
 
+    context['external_uri_scheme'] = settings.EXTERNAL_URI_SCHEME
     context['api_url'] = api_url
     context['api_url_scheme_relative'] = api_url_scheme_relative
     context["html_settings_links"] = html_settings_links
@@ -93,8 +94,13 @@ class MarkdownDirectoryView(ApiURLView):
 def add_integrations_context(context: Dict[str, Any]) -> None:
     alphabetical_sorted_categories = OrderedDict(sorted(CATEGORIES.items()))
     alphabetical_sorted_integration = OrderedDict(sorted(INTEGRATIONS.items()))
+    enabled_integrations_count = len(list(filter(lambda v: v.is_enabled(), INTEGRATIONS.values())))
+    # Subtract 1 so saying "Over X integrations" is correct. Then,
+    # round down to the nearest multiple of 10.
+    integrations_count_display = ((enabled_integrations_count - 1) // 10) * 10
     context['categories_dict'] = alphabetical_sorted_categories
     context['integrations_dict'] = alphabetical_sorted_integration
+    context['integrations_count_display'] = integrations_count_display
 
     if "html_settings_links" in context and context["html_settings_links"]:
         settings_html = '<a href="../../#settings">Zulip settings page</a>'
@@ -148,37 +154,9 @@ def integration_doc(request: HttpRequest, integration_name: str=REQ(default=None
         context['integration_url'] = integration.url[3:]
     if isinstance(integration, HubotIntegration):
         context['hubot_docs_url'] = integration.hubot_docs_url
+    if isinstance(integration, EmailIntegration):
+        context['email_gateway_example'] = settings.EMAIL_GATEWAY_EXAMPLE
 
     doc_html_str = render_markdown_path(integration.doc, context)
 
     return HttpResponse(doc_html_str)
-
-def api_endpoint_docs(request: HttpRequest) -> HttpResponse:
-    context = {}  # type: Dict[str, Any]
-    add_api_uri_context(context, request)
-
-    raw_calls = open('templates/zerver/api_content.json', 'r').read()
-    calls = ujson.loads(raw_calls)
-    langs = set()
-    for call in calls:
-        call["endpoint"] = "%s/v1/%s" % (
-            context["api_url"],
-            call["endpoint"])
-        call["example_request"]["curl"] = call["example_request"]["curl"].replace(
-            "https://api.zulip.com",
-            context["api_url"])
-        response = call['example_response']
-        if '\n' not in response:
-            # For 1-line responses, pretty-print them
-            extended_response = response.replace(", ", ",\n ")
-        else:
-            extended_response = response
-        call['rendered_response'] = bugdown.convert("~~~ .py\n" + extended_response + "\n~~~\n")
-        for example_type in ('request', 'response'):
-            for lang in call.get('example_' + example_type, []):
-                langs.add(lang)
-    return render(
-        request,
-        'zerver/api_endpoints.html',
-        context={'content': calls, 'langs': langs},
-    )

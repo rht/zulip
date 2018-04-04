@@ -160,20 +160,13 @@ $(function () {
         });
     }
 
-    function toggle_star(message_id) {
-        // Update the message object pointed to by the various message
-        // lists.
-        var message = ui.find_message(message_id);
-
-        unread_ops.mark_message_as_read(message);
-        ui.update_starred(message.id, message.starred !== true);
-        message_flags.send_starred([message], message.starred);
-    }
-
     $("#main_div").on("click", ".star", function (e) {
         e.stopPropagation();
         popovers.hide_all();
-        toggle_star(rows.id($(this).closest(".message_row")));
+
+        var message_id = rows.id($(this).closest(".message_row"));
+        var message = message_store.get(message_id);
+        message_flags.toggle_starred(message);
     });
 
     $("#main_div").on("click", ".message_reaction", function (e) {
@@ -185,9 +178,11 @@ $(function () {
 
     $("#main_div").on("click", "a.stream", function (e) {
         e.preventDefault();
+        // Note that we may have an href here, but we trust the stream id more,
+        // so we re-encode the hash.
         var stream = stream_data.get_sub_by_id($(this).attr('data-stream-id'));
         if (stream) {
-            window.location.href = '/#narrow/stream/' + hash_util.encodeHashComponent(stream.name);
+            window.location.href = '/#narrow/stream/' + hash_util.encode_stream_name(stream.name);
             return;
         }
         window.location.href = $(this).attr('href');
@@ -218,6 +213,7 @@ $(function () {
     });
     $("body").on("click", ".topic_edit_save", function (e) {
         var recipient_row = $(this).closest(".recipient_row");
+        message_edit.show_topic_edit_spinner(recipient_row);
         message_edit.save(recipient_row, true);
         e.stopPropagation();
         popovers.hide_all();
@@ -249,8 +245,9 @@ $(function () {
     $("body").on("click", ".copy_message", function (e) {
         var row = $(this).closest(".message_row");
         message_edit.end(row);
-        row.find(".alert-copied").css("display", "block");
-        row.find(".alert-copied").delay(1000).fadeOut(300);
+        row.find(".alert-msg").text(i18n.t("Copied!"));
+        row.find(".alert-msg").css("display", "block");
+        row.find(".alert-msg").delay(1000).fadeOut(300);
         e.preventDefault();
         e.stopPropagation();
     });
@@ -258,6 +255,17 @@ $(function () {
         if (document.activeElement === this) {
             ui_util.blur_active_element();
         }
+    });
+    $('#message_edit_form .send-status-close').click(function () {
+        var row_id = rows.id($(this).closest(".message_row"));
+        var send_status = $('#message-edit-send-status-' + row_id);
+        $(send_status).stop(true).fadeOut(200);
+    });
+    $("body").on("click", "#message_edit_form [id^='attach_files_']", function (e) {
+        e.preventDefault();
+
+        var row_id = rows.id($(this).closest(".message_row"));
+        $("#message_edit_file_input_" + row_id).trigger("click");
     });
 
     // MUTING
@@ -329,7 +337,7 @@ $(function () {
     $('#user_presences').expectOne().on('click', '.selectable_sidebar_block', function (e) {
         var user_id = $(e.target).parents('li').attr('data-user-id');
         var email = people.get_person_from_user_id(user_id).email;
-        activity.escape_search();
+        activity.clear_and_hide_search();
         narrow.by('pm-with', email, {select_first_unread: true, trigger: 'sidebar'});
         // The preventDefault is necessary so that clicking the
         // link doesn't jump us to the top of the page.
@@ -449,7 +457,8 @@ $(function () {
     });
 
     $("body").on("click", "[data-overlay-trigger]", function () {
-        ui.show_info_overlay($(this).attr("data-overlay-trigger"));
+        var target = $(this).attr("data-overlay-trigger");
+        info_overlay.show(target);
     });
 
     function handle_compose_click(e) {
@@ -476,14 +485,9 @@ $(function () {
         compose_actions.cancel();
     });
 
-    $("#join_unsub_stream").click(function (e) {
-        e.stopPropagation();
-        window.location.hash = "streams/all";
-    });
-
     $("#streams_inline_cog").click(function (e) {
         e.stopPropagation();
-        window.location.hash = "streams";
+        window.location.hash = "streams/all";
     });
 
     $("#streams_filter_icon").click(function (e) {
@@ -491,27 +495,6 @@ $(function () {
         stream_list.toggle_filter_displayed(e);
     });
 
-    $("body").on("click", ".default_stream_row .remove-default-stream", function () {
-        var row = $(this).closest(".default_stream_row");
-        var stream_name = row.attr("id");
-
-        channel.del({
-            url: "/json/default_streams" + "?" + $.param({ stream_name: stream_name }),
-            error: function (xhr) {
-                var button = row.find("button");
-                if (xhr.status.toString().charAt(0) === "4") {
-                    button.closest("td").html(
-                        $("<p>").addClass("text-error").text(JSON.parse(xhr.responseText).msg)
-                    );
-                } else {
-                    button.text(i18n.t("Failed!"));
-                }
-            },
-            success: function () {
-                row.remove();
-            },
-        });
-    });
 
     // FEEDBACK
 
@@ -578,26 +561,6 @@ $(function () {
             ".stream-name-editable": stream_edit.change_stream_name,
         };
 
-        // http://stackoverflow.com/questions/4233265/contenteditable-set-caret-at-the-end-of-the-text-cross-browser
-        function place_caret_at_end(el) {
-            el.focus();
-
-            if (typeof window.getSelection !== "undefined"
-                    && typeof document.createRange !== "undefined") {
-                var range = document.createRange();
-                range.selectNodeContents(el);
-                range.collapse(false);
-                var sel = window.getSelection();
-                sel.removeAllRanges();
-                sel.addRange(range);
-            } else if (typeof document.body.createTextRange !== "undefined") {
-                var textRange = document.body.createTextRange();
-                textRange.moveToElementText(el);
-                textRange.collapse(false);
-                textRange.select();
-            }
-        }
-
         $(document).on("keydown", ".editable-section", function (e) {
             e.stopPropagation();
             // Cancel editing description if Escape key is pressed.
@@ -641,7 +604,7 @@ $(function () {
                 edit_area.attr("data-prev-text", edit_area.text().trim())
                     .attr("contenteditable", true);
 
-                place_caret_at_end(edit_area[0]);
+                ui_util.place_caret_at_end(edit_area[0]);
 
                 $(this).html("&times;");
             }
@@ -664,12 +627,7 @@ $(function () {
     // open
     $('body').on('click', '.hotspot-icon', function (e) {
         // hide icon
-        $(this).animate({ opacity: 0 }, {
-            duration: 300,
-            done: function () {
-                $(this).css({ display: 'none' });
-            }.bind(this),
-        });
+        hotspots.close_hotspot_icon(this);
 
         // show popover
         var hotspot_name = $(e.target).closest('.hotspot-icon')
@@ -729,7 +687,7 @@ $(function () {
         }
 
         // Dismiss popovers if the user has clicked outside them
-        if ($('.popover-inner, .emoji-info-popover').has(e.target).length === 0) {
+        if ($('.popover-inner, .emoji-info-popover, .app-main [class^="column-"].expanded').has(e.target).length === 0) {
             popovers.hide_all();
         }
 
@@ -739,9 +697,12 @@ $(function () {
                 $("#compose-textarea").focus();
             } else if (!$(e.target).closest(".overlay").length &&
             !window.getSelection().toString() &&
-            !$(e.target).closest('.popover-content').length) {
+            !$(e.target).closest('.popover-content').length &&
+            $(e.target).closest('body').length) {
                 // Unfocus our compose area if we click out of it. Don't let exits out
                 // of overlays or selecting text (for copy+paste) trigger cancelling.
+                // Check if the click is within the body to prevent extensions from
+                // interfering with the compose box.
                 compose_actions.cancel();
             }
         }

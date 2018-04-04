@@ -27,6 +27,14 @@ Form is validated both client-side using jquery-validate (see signup.js) and ser
             {{ csrf_input }}
 
             <section class="user-registration">
+                {% if realm_name and not creating_new_team %}
+                <img class="avatar inline-block" src="{{ realm_icon }}" alt="" />
+                <div class="info-box inline-block">
+                    <div class="organization-name">{{ realm_name }}</div>
+                    <div class="organization-path">{{ realm_uri }}</div>
+                </div>
+                {% endif %}
+
                 <div class="input-box no-validation">
                     <input type='hidden' name='key' value='{{ key }}' />
                     <input type='hidden' name='timezone' id='timezone'/>
@@ -124,7 +132,7 @@ Form is validated both client-side using jquery-validate (see signup.js) and ser
 
                     <div class="inline-block" id="subdomain_section" {% if root_domain_available and
                         not form.realm_subdomain.errors and not form.realm_subdomain.value() %}style="display: none;"{% endif %}>
-                        <div class="or">or</div>
+                        <div class="or">{{ _('OR') }}</div>
                         <div class="inline-block relative">
                             <input id="id_team_subdomain"
                                 class="{% if root_domain_landing_page %}required{% endif %} subdomain" type="text"
@@ -132,7 +140,7 @@ Form is validated both client-side using jquery-validate (see signup.js) and ser
                                 value="{% if form.realm_subdomain.value() %}{{ form.realm_subdomain.value() }}{% endif %}"
                                 name="realm_subdomain" maxlength={{ MAX_REALM_SUBDOMAIN_LENGTH }}
                                 {% if root_domain_landing_page %}required{% endif %} />
-                            <p class="realm_subdomain_label">.{{ external_host }}</p>
+                            <label for="id_team_subdomain" class="realm_subdomain_label">.{{ external_host }}</label>
                             <p id="id_team_subdomain_error_client" class="error help-inline text-error"></p>
                         </div>
                         {% if form.realm_subdomain.errors %}
@@ -142,7 +150,7 @@ Form is validated both client-side using jquery-validate (see signup.js) and ser
                         {% endif %}
                     </div>
                     <div class="help-box margin-top">
-                        {{ _("The address you'll use to sign in to your organization.") }}
+                        {{ _("The address you'll use to log in to your organization.") }}
                     </div>
                 </div>
                 {% endif %}
@@ -200,37 +208,6 @@ if ($('.team_subdomain_error_server').text() === '') {
 }
 
 $("#timezone").val(moment.tz.guess());
-
-$('#id_team_subdomain').on('input', function (e) {
-    // preserve selection range, to be set after setting the text
-    var start = e.target.selectionStart,
-        end = e.target.selectionEnd;
-
-    // toggle displaying server-side / client-side errors; messages
-    // from only one of the two should be showing at any time.
-    $('.team_subdomain_error_server').text('').css('display', 'none');
-
-    var autocorrected = e.target.value
-        .toLowerCase()
-        .replace(/[_|\s]/g, '-');
-
-    e.target.value = autocorrected;
-
-    if (e.target.value.charAt(0) === '-' ||
-        e.target.value.charAt(e.target.value.length - 1) === '-') {
-        $('#id_team_subdomain_error_client')
-            .text(i18n.t("Cannot start or end with a '-'"))
-            .css('display', 'block');
-    } else if (/[^0-9a-z\-]/.test(e.target.value)) {
-        $('#id_team_subdomain_error_client')
-            .text(i18n.t("Can only use letters a-z, numbers 0-9, and '-'s."))
-            .css('display', 'block');
-    } else {
-        $('#id_team_subdomain_error_client').text('').css('display', 'none');
-    }
-
-    e.target.setSelectionRange(start, end);
-});
 </script>
 
 {% endblock %}

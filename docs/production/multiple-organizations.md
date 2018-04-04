@@ -1,3 +1,7 @@
+```eval_rst
+:orphan:
+```
+
 # Hosting multiple organizations
 
 The vast majority of Zulip servers host just a single organization (or
@@ -18,7 +22,7 @@ subdomain.  E.g. you'd have `org1.zulip.example.com` and
 `org2.zulip.example.com`.
 
 Web security standards mean that one subdomain per organization is
-required to support a use logging into multiple organizations on a
+required to support a user logging into multiple organizations on a
 server at the same time.
 
 When you want to create a new organization, you need to do a few

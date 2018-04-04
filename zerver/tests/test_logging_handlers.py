@@ -9,22 +9,22 @@ from django.http import HttpRequest, HttpResponse
 from django.test import RequestFactory, TestCase
 from django.utils.log import AdminEmailHandler
 from functools import wraps
-from mock import patch
+from mock import MagicMock, patch
 from mypy_extensions import NoReturn
 from typing import Any, Callable, Dict, Mapping, Optional, Text, Iterator
 
 from zerver.lib.request import JsonableError
+from zerver.lib.types import ViewFuncT
 from zerver.lib.test_classes import ZulipTestCase
-from zerver.logging_handlers import AdminZulipHandler
+from zerver.logging_handlers import AdminNotifyHandler
 from zerver.middleware import JsonErrorHandler
 from zerver.views.compatibility import check_compatibility
 from zerver.worker.queue_processors import QueueProcessingWorker
 
 captured_request = None  # type: Optional[HttpRequest]
 captured_exc_info = None
-def capture_and_throw(
-        domain: Optional[Text]=None) -> Callable[[Callable[..., HttpResponse]], Callable[..., HttpResponse]]:
-    def wrapper(view_func: Callable[..., HttpResponse]) -> Callable[..., HttpResponse]:
+def capture_and_throw(domain: Optional[Text]=None) -> Callable[[ViewFuncT], ViewFuncT]:
+    def wrapper(view_func: ViewFuncT) -> ViewFuncT:
         @wraps(view_func)
         def wrapped_view(request: HttpRequest, *args: Any, **kwargs: Any) -> NoReturn:
             global captured_request
@@ -35,17 +35,17 @@ def capture_and_throw(
                 global captured_exc_info
                 captured_exc_info = sys.exc_info()
                 raise e
-        return wrapped_view
+        return wrapped_view  # type: ignore # https://github.com/python/mypy/issues/1927
     return wrapper
 
-class AdminZulipHandlerTest(ZulipTestCase):
+class AdminNotifyHandlerTest(ZulipTestCase):
     logger = logging.getLogger('django')
 
     def setUp(self) -> None:
-        self.handler = AdminZulipHandler()
+        self.handler = AdminNotifyHandler()
         # Prevent the exceptions we're going to raise from being printed
         # You may want to disable this when debugging tests
-        settings.LOGGING_NOT_DISABLED = False
+        settings.LOGGING_ENABLED = False
 
         global captured_exc_info
         global captured_request
@@ -53,16 +53,18 @@ class AdminZulipHandlerTest(ZulipTestCase):
         captured_exc_info = None
 
     def tearDown(self) -> None:
-        settings.LOGGING_NOT_DISABLED = True
+        settings.LOGGING_ENABLED = True
 
-    def get_admin_zulip_handler(self) -> AdminZulipHandler:
+    def get_admin_zulip_handler(self) -> AdminNotifyHandler:
         return [
             h for h in logging.getLogger('').handlers
-            if isinstance(h, AdminZulipHandler)
+            if isinstance(h, AdminNotifyHandler)
         ][0]
 
-    def test_basic(self) -> None:
-        """A random exception passes happily through AdminZulipHandler"""
+    @patch('zerver.logging_handlers.try_git_describe')
+    def test_basic(self, mock_function: MagicMock) -> None:
+        mock_function.return_value = None
+        """A random exception passes happily through AdminNotifyHandler"""
         handler = self.get_admin_zulip_handler()
         try:
             raise Exception("Testing Error!")
@@ -72,127 +74,117 @@ class AdminZulipHandlerTest(ZulipTestCase):
                                         'message', {}, exc_info)
         handler.emit(record)
 
+    def simulate_error(self) -> logging.LogRecord:
+        email = self.example_email('hamlet')
+        self.login(email)
+        with patch("zerver.decorator.rate_limit") as rate_limit_patch:
+            rate_limit_patch.side_effect = capture_and_throw
+            result = self.client_get("/json/users")
+            self.assert_json_error(result, "Internal server error", status_code=500)
+            rate_limit_patch.assert_called_once()
+
+        record = self.logger.makeRecord('name', logging.ERROR, 'function', 15,
+                                        'message', {}, captured_exc_info)
+        record.request = captured_request  # type: ignore # this field is dynamically added
+        return record
+
     def run_handler(self, record: logging.LogRecord) -> Dict[str, Any]:
-        with patch('zerver.logging_handlers.queue_json_publish') as patched_publish:
+        with patch('zerver.lib.error_notify.notify_server_error') as patched_notify:
             self.handler.emit(record)
-            patched_publish.assert_called_once()
-            event = patched_publish.call_args[0][1]
-            self.assertIn("report", event)
-            return event["report"]
+            patched_notify.assert_called_once()
+            return patched_notify.call_args[0][0]
 
-    def test_long_exception_request(self) -> None:
-        """A request with with no stack where report.getMessage() has newlines
-        in it is handled properly"""
-        email = self.example_email('hamlet')
-        self.login(email)
-        with patch("zerver.decorator.rate_limit") as rate_limit_patch:
-            rate_limit_patch.side_effect = capture_and_throw
-            result = self.client_get("/json/users")
-            self.assert_json_error(result, "Internal server error", status_code=500)
-            rate_limit_patch.assert_called_once()
+    @patch('zerver.logging_handlers.try_git_describe')
+    def test_long_exception_request(self, mock_function: MagicMock) -> None:
+        mock_function.return_value = None
+        """A request with no stack and multi-line report.getMessage() is handled properly"""
+        record = self.simulate_error()
+        record.exc_info = None
+        record.msg = 'message\nmoremesssage\nmore'
 
-            global captured_request
-            global captured_exc_info
-            record = self.logger.makeRecord('name', logging.ERROR, 'function', 15,
-                                            'message\nmoremesssage\nmore', {},
-                                            None)
-            record.request = captured_request  # type: ignore # this field is dynamically added
+        report = self.run_handler(record)
+        self.assertIn("user_email", report)
+        self.assertIn("message", report)
+        self.assertIn("stack_trace", report)
+        self.assertEqual(report['stack_trace'], 'message\nmoremesssage\nmore')
+        self.assertEqual(report['message'], 'message')
 
-            report = self.run_handler(record)
-            self.assertIn("user_email", report)
-            self.assertIn("message", report)
-            self.assertIn("stack_trace", report)
-            self.assertEqual(report['stack_trace'], 'message\nmoremesssage\nmore')
-            self.assertEqual(report['message'], 'message')
-
-    def test_request(self) -> None:
+    @patch('zerver.logging_handlers.try_git_describe')
+    def test_request(self, mock_function: MagicMock) -> None:
+        mock_function.return_value = None
         """A normal request is handled properly"""
-        email = self.example_email('hamlet')
-        self.login(email)
-        with patch("zerver.decorator.rate_limit") as rate_limit_patch:
-            rate_limit_patch.side_effect = capture_and_throw
-            result = self.client_get("/json/users")
-            self.assert_json_error(result, "Internal server error", status_code=500)
-            rate_limit_patch.assert_called_once()
+        record = self.simulate_error()
 
-            global captured_request
-            global captured_exc_info
-            record = self.logger.makeRecord('name', logging.ERROR, 'function', 15,
-                                            'message', {}, captured_exc_info)
-            record.request = captured_request  # type: ignore # this field is dynamically added
+        report = self.run_handler(record)
+        self.assertIn("user_email", report)
+        self.assertIn("message", report)
+        self.assertIn("stack_trace", report)
 
-            report = self.run_handler(record)
-            self.assertIn("user_email", report)
-            self.assertIn("message", report)
-            self.assertIn("stack_trace", report)
-
-            # Test that `add_request_metadata` throwing an exception is fine
-            with patch("zerver.logging_handlers.traceback.print_exc"):
-                with patch("zerver.logging_handlers.add_request_metadata",
-                           side_effect=Exception("Unexpected exception!")):
-                    report = self.run_handler(record)
-            self.assertNotIn("user_email", report)
-            self.assertIn("message", report)
-            self.assertEqual(report["stack_trace"], "See /var/log/zulip/errors.log")
-
-            # Check anonymous user is handled correctly
-            record.request.user = AnonymousUser()  # type: ignore # this field is dynamically added
-            report = self.run_handler(record)
-            self.assertIn("host", report)
-            self.assertIn("user_email", report)
-            self.assertIn("message", report)
-            self.assertIn("stack_trace", report)
-
-            # Now simulate a DisallowedHost exception
-            def get_host_error() -> None:
-                raise Exception("Get Host Failure!")
-            orig_get_host = record.request.get_host  # type: ignore # this field is dynamically added
-            record.request.get_host = get_host_error  # type: ignore # this field is dynamically added
-            report = self.run_handler(record)
-            record.request.get_host = orig_get_host  # type: ignore # this field is dynamically added
-            self.assertIn("host", report)
-            self.assertIn("user_email", report)
-            self.assertIn("message", report)
-            self.assertIn("stack_trace", report)
-
-            # Test an exception_filter exception
-            with patch("zerver.logging_handlers.get_exception_reporter_filter",
-                       return_value=15):
-                record.request.method = "POST"  # type: ignore # this field is dynamically added
+        # Test that `add_request_metadata` throwing an exception is fine
+        with patch("zerver.logging_handlers.traceback.print_exc"):
+            with patch("zerver.logging_handlers.add_request_metadata",
+                       side_effect=Exception("Unexpected exception!")):
                 report = self.run_handler(record)
-                record.request.method = "GET"  # type: ignore # this field is dynamically added
-            self.assertIn("host", report)
-            self.assertIn("user_email", report)
-            self.assertIn("message", report)
-            self.assertIn("stack_trace", report)
+        self.assertNotIn("user_email", report)
+        self.assertIn("message", report)
+        self.assertEqual(report["stack_trace"], "See /var/log/zulip/errors.log")
 
-            # Test the catch-all exception handler doesn't throw
+        # Check anonymous user is handled correctly
+        record.request.user = AnonymousUser()  # type: ignore # this field is dynamically added
+        report = self.run_handler(record)
+        self.assertIn("host", report)
+        self.assertIn("user_email", report)
+        self.assertIn("message", report)
+        self.assertIn("stack_trace", report)
+
+        # Now simulate a DisallowedHost exception
+        def get_host_error() -> None:
+            raise Exception("Get Host Failure!")
+        orig_get_host = record.request.get_host  # type: ignore # this field is dynamically added
+        record.request.get_host = get_host_error  # type: ignore # this field is dynamically added
+        report = self.run_handler(record)
+        record.request.get_host = orig_get_host  # type: ignore # this field is dynamically added
+        self.assertIn("host", report)
+        self.assertIn("user_email", report)
+        self.assertIn("message", report)
+        self.assertIn("stack_trace", report)
+
+        # Test an exception_filter exception
+        with patch("zerver.logging_handlers.get_exception_reporter_filter",
+                   return_value=15):
+            record.request.method = "POST"  # type: ignore # this field is dynamically added
+            report = self.run_handler(record)
+            record.request.method = "GET"  # type: ignore # this field is dynamically added
+        self.assertIn("host", report)
+        self.assertIn("user_email", report)
+        self.assertIn("message", report)
+        self.assertIn("stack_trace", report)
+
+        # Test the catch-all exception handler doesn't throw
+        with patch('zerver.lib.error_notify.notify_server_error',
+                   side_effect=Exception("queue error")):
+            self.handler.emit(record)
+        with self.settings(STAGING_ERROR_NOTIFICATIONS=False):
             with patch('zerver.logging_handlers.queue_json_publish',
                        side_effect=Exception("queue error")):
                 self.handler.emit(record)
 
-            # Test the STAGING_ERROR_NOTIFICATIONS code path
-            with self.settings(STAGING_ERROR_NOTIFICATIONS=True):
-                with patch('zerver.lib.error_notify.notify_server_error',
-                           side_effect=Exception("queue error")):
-                    self.handler.emit(record)
+        # Test no exc_info
+        record.exc_info = None
+        report = self.run_handler(record)
+        self.assertIn("host", report)
+        self.assertIn("user_email", report)
+        self.assertIn("message", report)
+        self.assertEqual(report["stack_trace"], 'No stack trace available')
 
-            # Test no exc_info
-            record.exc_info = None
+        # Test arbitrary exceptions from request.user
+        record.request.user = None  # type: ignore # this field is dynamically added
+        with patch("zerver.logging_handlers.traceback.print_exc"):
             report = self.run_handler(record)
-            self.assertIn("host", report)
-            self.assertIn("user_email", report)
-            self.assertIn("message", report)
-            self.assertEqual(report["stack_trace"], None)
-
-            # Test arbitrary exceptions from request.user
-            record.request.user = None  # type: ignore # this field is dynamically added
-            with patch("zerver.logging_handlers.traceback.print_exc"):
-                report = self.run_handler(record)
-            self.assertIn("host", report)
-            self.assertIn("user_email", report)
-            self.assertIn("message", report)
-            self.assertIn("stack_trace", report)
+        self.assertIn("host", report)
+        self.assertIn("user_email", report)
+        self.assertIn("message", report)
+        self.assertIn("stack_trace", report)
 
 class LoggingConfigTest(TestCase):
     @staticmethod

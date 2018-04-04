@@ -85,7 +85,7 @@ exports.parse_narrow = function (hash) {
             }
             operators.push({negated: negated, operator: operator, operand: operand});
         } catch (err) {
-            return undefined;
+            return;
         }
     }
     return operators;
@@ -152,13 +152,13 @@ function do_hashchange(from_reload) {
         ui_util.change_tab_to("#streams");
         break;
     case "#keyboard-shortcuts":
-        ui.show_info_overlay("keyboard-shortcuts");
+        info_overlay.show("keyboard-shortcuts");
         break;
     case "#markdown-help":
-        ui.show_info_overlay("markdown-help");
+        info_overlay.show("markdown-help");
         break;
     case "#search-operators":
-        ui.show_info_overlay("search-operators");
+        info_overlay.show("search-operators");
         break;
     case "#drafts":
         ui_util.change_tab_to("#drafts");
@@ -284,9 +284,9 @@ function hashchanged(from_reload, e) {
         changing_hash = false;
         return ret;
     // once we unignore the hash, we have to set the hash back to what it was
-    // originally (eg. '#narrow/stream/Denmark' instead of '#settings'). We
+    // originally (eg. '#narrow/stream/999-Denmark' instead of '#settings'). We
     // therefore ignore the hash change once more while we change it back for
-    // no iterruptions.
+    // no interruptions.
     } else if (ignore.flag) {
         ignore.flag = false;
     }

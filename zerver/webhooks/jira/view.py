@@ -10,9 +10,9 @@ from django.http import HttpRequest, HttpResponse
 from django.utils.translation import ugettext as _
 
 from zerver.decorator import api_key_only_webhook_view
-from zerver.lib.actions import check_send_stream_message
 from zerver.lib.request import REQ, has_request_variables
 from zerver.lib.response import json_error, json_success
+from zerver.lib.webhooks.common import check_send_webhook_message
 from zerver.models import Realm, UserProfile, get_user
 
 IGNORED_EVENTS = [
@@ -95,7 +95,7 @@ def get_in(payload: Dict[str, Any], keys: List[str], default: Text='') -> Any:
         return default
     return payload
 
-def get_issue_string(payload: Dict[str, Any], issue_id: Text=None) -> Text:
+def get_issue_string(payload: Dict[str, Any], issue_id: Optional[Text]=None) -> Text:
     # Guess the URL as it is not specified in the payload
     # We assume that there is a /browse/BUG-### page
     # from the REST url of the issue itself
@@ -223,8 +223,7 @@ def handle_deleted_issue_event(payload: Dict[str, Any]) -> Text:
 @api_key_only_webhook_view("JIRA")
 @has_request_variables
 def api_jira_webhook(request: HttpRequest, user_profile: UserProfile,
-                     payload: Dict[str, Any]=REQ(argument_type='body'),
-                     stream: Text=REQ(default='jira')) -> HttpResponse:
+                     payload: Dict[str, Any]=REQ(argument_type='body')) -> HttpResponse:
 
     event = get_event_type(payload)
     if event == 'jira:issue_created':
@@ -249,5 +248,5 @@ def api_jira_webhook(request: HttpRequest, user_profile: UserProfile,
                 logging.warning("Got JIRA event type we don't support: {}".format(event))
             return json_success()
 
-    check_send_stream_message(user_profile, request.client, stream, subject, content)
+    check_send_webhook_message(request, user_profile, subject, content)
     return json_success()

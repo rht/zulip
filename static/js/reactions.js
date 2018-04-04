@@ -47,7 +47,21 @@ function get_message(message_id) {
     return message;
 }
 
-function send_reaction_ajax(message_id, reaction_info) {
+function create_reaction(message_id, reaction_info) {
+    return {
+        message_id: message_id,
+        user: {
+            user_id: page_params.user_id,
+            id: page_params.user_id,
+        },
+        local_id: exports.get_local_reaction_id(reaction_info),
+        reaction_type: reaction_info.reaction_type,
+        emoji_name: reaction_info.emoji_name,
+        emoji_code: reaction_info.emoji_code,
+    };
+}
+
+function update_ui_and_send_reaction_ajax(message_id, reaction_info) {
     var message = get_message(message_id);
     var has_reacted = exports.current_user_has_reacted_to_emoji(
         message,
@@ -55,6 +69,13 @@ function send_reaction_ajax(message_id, reaction_info) {
         reaction_info.reaction_type
     );
     var operation = has_reacted ? 'remove' : 'add';
+    var reaction = create_reaction(message_id, reaction_info);
+
+    if (operation === "add") {
+        exports.add_reaction(reaction);
+    } else {
+        exports.remove_reaction(reaction);
+    }
 
     var args = {
         url: '/json/messages/' + message_id + '/reactions',
@@ -87,18 +108,22 @@ function get_user_list_for_message_reaction(message, local_id) {
 }
 
 exports.toggle_emoji_reaction = function (message_id, emoji_name) {
-    // This toggles the current user's reaction to the clicked emoji.
+    // This codepath doesn't support toggling a deactivated realm emoji.
+    // Since an user can interact with a deactivated realm emoji only by
+    // clicking on a reaction and that is handled by `process_reaction_click()`
+    // method. This codepath is to be used only where there is no chance of an
+    // user interacting with a deactivated realm emoji like emoji picker.
     var reaction_info = {
         emoji_name: emoji_name,
     };
 
-    if (emoji.all_realm_emojis.hasOwnProperty(emoji_name)) {
+    if (emoji.active_realm_emojis.hasOwnProperty(emoji_name)) {
         if (emoji_name === 'zulip') {
             reaction_info.reaction_type = 'zulip_extra_emoji';
         } else {
             reaction_info.reaction_type = 'realm_emoji';
         }
-        reaction_info.emoji_code = emoji_name;
+        reaction_info.emoji_code = emoji.active_realm_emojis[emoji_name].id;
     } else if (emoji_codes.name_to_codepoint.hasOwnProperty(emoji_name)) {
         reaction_info.reaction_type = 'unicode_emoji';
         reaction_info.emoji_code = emoji_codes.name_to_codepoint[emoji_name];
@@ -107,7 +132,7 @@ exports.toggle_emoji_reaction = function (message_id, emoji_name) {
         return;
     }
 
-    send_reaction_ajax(message_id, reaction_info);
+    update_ui_and_send_reaction_ajax(message_id, reaction_info);
 
     // The next line isn't always necessary, but it is harmless/quick
     // when no popovers are there.
@@ -117,7 +142,7 @@ exports.toggle_emoji_reaction = function (message_id, emoji_name) {
 exports.process_reaction_click = function (message_id, local_id) {
     var reaction_info = exports.get_reaction_info(local_id);
 
-    send_reaction_ajax(message_id, reaction_info);
+    update_ui_and_send_reaction_ajax(message_id, reaction_info);
 };
 
 function full_name(user_id) {
@@ -173,6 +198,13 @@ exports.add_reaction = function (event) {
         // If we don't have the message in cache, do nothing; if we
         // ever fetch it from the server, it'll come with the
         // latest reactions attached
+        return;
+    }
+
+    var reacted = exports.current_user_has_reacted_to_emoji(message,
+                                                            event.emoji_code,
+                                                            event.reaction_type);
+    if (reacted && (event.user.user_id === page_params.user_id)) {
         return;
     }
 
@@ -247,8 +279,8 @@ exports.view.insert_new_reaction = function (opts) {
 
     context.count = 1;
     context.title = new_title;
-    context.emoji_alt_code = page_params.emoji_alt_code;
     context.local_id = exports.get_local_reaction_id(opts);
+    context.emoji_alt_code = (page_params.emojiset === 'text');
 
     if (opts.user_id === page_params.user_id) {
         context.class = "message_reaction reacted";
@@ -277,6 +309,13 @@ exports.remove_reaction = function (event) {
         // If we don't have the message in cache, do nothing; if we
         // ever fetch it from the server, it'll come with the
         // latest reactions attached
+        return;
+    }
+
+    var not_reacted = !exports.current_user_has_reacted_to_emoji(message,
+                                                                 emoji_code,
+                                                                 reaction_type);
+    if (not_reacted && (event.user.user_id === page_params.user_id)) {
         return;
     }
 
@@ -371,11 +410,11 @@ exports.get_message_reactions = function (message) {
         reaction.emoji_code = reaction.emoji_code;
         reaction.count = reaction.user_ids.length;
         reaction.title = generate_title(reaction.emoji_name, reaction.user_ids);
-        reaction.emoji_alt_code = page_params.emoji_alt_code;
+        reaction.emoji_alt_code = (page_params.emojiset === 'text');
 
         if (reaction.reaction_type !== 'unicode_emoji') {
             reaction.is_realm_emoji = true;
-            reaction.url = emoji.all_realm_emojis[reaction.emoji_name].emoji_url;
+            reaction.url = emoji.all_realm_emojis[reaction.emoji_code].emoji_url;
         }
         if (reaction.user_ids.indexOf(page_params.user_id) !== -1) {
             reaction.class = "message_reaction reacted";

@@ -1,12 +1,13 @@
 from functools import partial
 from typing import Any, Dict, Iterable, Optional, Text
+import re
 
 from django.http import HttpRequest, HttpResponse
 
 from zerver.decorator import api_key_only_webhook_view
-from zerver.lib.actions import check_send_stream_message
 from zerver.lib.request import REQ, has_request_variables
 from zerver.lib.response import json_success
+from zerver.lib.webhooks.common import check_send_webhook_message
 from zerver.lib.webhooks.git import EMPTY_SHA, \
     SUBJECT_WITH_PR_OR_ISSUE_INFO_TEMPLATE, \
     get_commits_comment_action_message, get_issue_event_message, \
@@ -61,12 +62,17 @@ def get_tag_push_event_body(payload: Dict[str, Any]) -> Text:
     )
 
 def get_issue_created_event_body(payload: Dict[str, Any]) -> Text:
+    description = payload['object_attributes'].get('description')
+    # Filter out multiline hidden comments
+    if description is not None:
+        description = re.sub('<!--.*?-->', '', description, 0, re.DOTALL)
+        description = description.rstrip()
     return get_issue_event_message(
         get_issue_user_name(payload),
         'created',
         get_object_url(payload),
         payload['object_attributes'].get('iid'),
-        payload['object_attributes'].get('description'),
+        description,
         get_objects_assignee(payload)
     )
 
@@ -256,22 +262,21 @@ EVENT_FUNCTION_MAPPER = {
     'Merge Request Hook reopen': partial(get_merge_request_event_body, action='reopened'),
     'Wiki Page Hook create': partial(get_wiki_page_event_body, action='created'),
     'Wiki Page Hook update': partial(get_wiki_page_event_body, action='updated'),
+    'Job Hook': get_build_hook_event_body,
     'Build Hook': get_build_hook_event_body,
     'Pipeline Hook': get_pipeline_event_body,
 }
 
 @api_key_only_webhook_view("Gitlab")
 @has_request_variables
-def api_gitlab_webhook(request, user_profile,
-                       stream=REQ(default='gitlab'),
-                       payload=REQ(argument_type='body'),
-                       branches=REQ(default=None)):
-    # type: (HttpRequest, UserProfile, Text, Dict[str, Any], Optional[Text]) -> HttpResponse
+def api_gitlab_webhook(request: HttpRequest, user_profile: UserProfile,
+                       payload: Dict[str, Any]=REQ(argument_type='body'),
+                       branches: Optional[Text]=REQ(default=None)) -> HttpResponse:
     event = get_event(request, payload, branches)
     if event is not None:
         body = get_body_based_on_event(event)(payload)
-        subject = get_subject_based_on_event(event, payload)
-        check_send_stream_message(user_profile, request.client, stream, subject, body)
+        topic = get_subject_based_on_event(event, payload)
+        check_send_webhook_message(request, user_profile, topic, body)
     return json_success()
 
 def get_body_based_on_event(event: str) -> Any:
@@ -280,7 +285,7 @@ def get_body_based_on_event(event: str) -> Any:
 def get_subject_based_on_event(event: str, payload: Dict[str, Any]) -> Text:
     if event == 'Push Hook':
         return u"{} / {}".format(get_repo_name(payload), get_branch_name(payload))
-    elif event == 'Build Hook':
+    elif event == 'Job Hook' or event == 'Build Hook':
         return u"{} / {}".format(payload['repository'].get('name'), get_branch_name(payload))
     elif event == 'Pipeline Hook':
         return u"{} / {}".format(

@@ -9,12 +9,11 @@ from django.urls import reverse
 
 from zerver.decorator import has_request_variables, \
     zulip_login_required, REQ, human_users_only
-from zerver.lib.actions import do_change_password, \
-    do_change_enter_sends, do_change_notification_settings, \
-    do_change_default_desktop_notifications, do_change_autoscroll_forever, \
-    do_regenerate_api_key, do_change_avatar_fields, do_set_user_display_setting, \
-    validate_email, do_change_user_email, do_start_email_change_process, \
-    check_change_full_name
+from zerver.lib.actions import do_change_password, do_change_notification_settings, \
+    do_change_enter_sends, do_change_default_desktop_notifications, \
+    do_regenerate_api_key, do_change_avatar_fields, \
+    do_set_user_display_setting, validate_email, do_change_user_email, \
+    do_start_email_change_process, check_change_full_name
 from zerver.lib.avatar import avatar_url
 from zerver.lib.send_email import send_email, FromAddress
 from zerver.lib.i18n import get_available_language_codes
@@ -38,7 +37,7 @@ def confirm_email_change(request: HttpRequest, confirmation_key: str) -> HttpRes
     old_email = email_change_object.old_email
     user_profile = email_change_object.user_profile
 
-    if user_profile.realm.email_changes_disabled:
+    if user_profile.realm.email_changes_disabled and not user_profile.is_realm_admin:
         raise JsonableError(_("Email address changes are disabled in this organization."))
     do_change_user_email(user_profile, new_email)
 
@@ -57,15 +56,9 @@ def confirm_email_change(request: HttpRequest, confirmation_key: str) -> HttpRes
 @has_request_variables
 def json_change_ui_settings(
         request: HttpRequest, user_profile: UserProfile,
-        autoscroll_forever: Optional[bool]=REQ(validator=check_bool, default=None),
         default_desktop_notifications: Optional[bool]=REQ(validator=check_bool, default=None)
 ) -> HttpResponse:
     result = {}
-
-    if autoscroll_forever is not None and \
-            user_profile.autoscroll_forever != autoscroll_forever:
-        do_change_autoscroll_forever(user_profile, autoscroll_forever)
-        result['autoscroll_forever'] = autoscroll_forever
 
     if default_desktop_notifications is not None and \
             user_profile.default_desktop_notifications != default_desktop_notifications:
@@ -80,14 +73,11 @@ def json_change_settings(request: HttpRequest, user_profile: UserProfile,
                          full_name: Text=REQ(default=""),
                          email: Text=REQ(default=""),
                          old_password: Text=REQ(default=""),
-                         new_password: Text=REQ(default=""),
-                         confirm_password: Text=REQ(default="")) -> HttpResponse:
+                         new_password: Text=REQ(default="")) -> HttpResponse:
     if not (full_name or new_password or email):
-        return json_error(_("No new data supplied"))
+        return json_error(_("Please fill out all fields."))
 
-    if new_password != "" or confirm_password != "":
-        if new_password != confirm_password:
-            return json_error(_("New password must match confirmation password!"))
+    if new_password != "":
         if not authenticate(username=user_profile.email, password=old_password,
                             realm=user_profile.realm):
             return json_error(_("Wrong password!"))
@@ -110,7 +100,7 @@ def json_change_settings(request: HttpRequest, user_profile: UserProfile,
     result = {}  # type: Dict[str, Any]
     new_email = email.strip()
     if user_profile.email != email and new_email != '':
-        if user_profile.realm.email_changes_disabled:
+        if user_profile.realm.email_changes_disabled and not user_profile.is_realm_admin:
             return json_error(_("Email address changes are disabled in this organization."))
         error, skipped = validate_email(user_profile, new_email)
         if error:
@@ -122,7 +112,7 @@ def json_change_settings(request: HttpRequest, user_profile: UserProfile,
         result['account_email'] = _("Check your email for a confirmation link. ")
 
     if user_profile.full_name != full_name and full_name.strip() != "":
-        if name_changes_disabled(user_profile.realm):
+        if name_changes_disabled(user_profile.realm) and not user_profile.is_realm_admin:
             # Failingly silently is fine -- they can't do it through the UI, so
             # they'd have to be trying to break the rules.
             pass
@@ -139,9 +129,9 @@ def update_display_settings_backend(
         twenty_four_hour_time: Optional[bool]=REQ(validator=check_bool, default=None),
         high_contrast_mode: Optional[bool]=REQ(validator=check_bool, default=None),
         night_mode: Optional[bool]=REQ(validator=check_bool, default=None),
+        translate_emoticons: Optional[bool]=REQ(validator=check_bool, default=None),
         default_language: Optional[bool]=REQ(validator=check_string, default=None),
         left_side_userlist: Optional[bool]=REQ(validator=check_bool, default=None),
-        emoji_alt_code: Optional[bool]=REQ(validator=check_bool, default=None),
         emojiset: Optional[str]=REQ(validator=check_string, default=None),
         timezone: Optional[str]=REQ(validator=check_string, default=None)) -> HttpResponse:
 
@@ -180,7 +170,9 @@ def json_change_notify_settings(
         enable_offline_push_notifications: Optional[bool]=REQ(validator=check_bool, default=None),
         enable_online_push_notifications: Optional[bool]=REQ(validator=check_bool, default=None),
         enable_digest_emails: Optional[bool]=REQ(validator=check_bool, default=None),
-        pm_content_in_desktop_notifications: Optional[bool]=REQ(validator=check_bool, default=None)
+        message_content_in_email_notifications: Optional[bool]=REQ(validator=check_bool, default=None),
+        pm_content_in_desktop_notifications: Optional[bool]=REQ(validator=check_bool, default=None),
+        realm_name_in_notifications: Optional[bool]=REQ(validator=check_bool, default=None)
 ) -> HttpResponse:
     result = {}
 

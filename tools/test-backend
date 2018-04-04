@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from typing import List, Any
+from mypy_extensions import NoReturn
 import glob
 import argparse
 import os
@@ -37,6 +38,7 @@ target_fully_covered = {path for target in [
     # Once we have a nice negative tests system, we can add these:
     # 'zerver/webhooks/*/*.py',
     # 'zerver/webhooks/*/*/*.py',
+    'zerver/worker/queue_processor.py',
 ] for path in glob.glob(target)}
 
 not_yet_fully_covered = {
@@ -63,7 +65,6 @@ not_yet_fully_covered = {
     'zerver/lib/send_email.py',
     'zerver/lib/soft_deactivation.py',
     'zerver/lib/upload.py',
-    'zerver/models.py',
     # Other lib files that ideally would coverage, but aren't sorted
     'zerver/__init__.py',
     'zerver/apps.py',
@@ -90,6 +91,7 @@ not_yet_fully_covered = {
     'zerver/lib/profile.py',
     'zerver/lib/queue.py',
     'zerver/lib/rate_limiter.py',
+    'zerver/lib/slack_data_to_zulip_data.py',
     'zerver/lib/sqlalchemy_utils.py',
     'zerver/lib/str_utils.py',
     'zerver/lib/stream_recipient.py',
@@ -106,6 +108,7 @@ not_yet_fully_covered = {
     'zerver/lib/statistics.py',
     'zerver/lib/test_fixtures.py',
     'zerver/lib/test_runner.py',
+    'zerver/lib/api_test_helpers.py',
     # Webhook integrations with incomplete coverage
     'zerver/webhooks/basecamp/view.py',
     'zerver/webhooks/beanstalk/view.py',
@@ -158,7 +161,7 @@ def block_internet():
     # We are blocking internet currently by assuming mostly any test would use
     # httplib2 to access internet.
     def internet_guard(*args, **kwargs):
-        # type: (*Any, **Any) -> None
+        # type: (*Any, **Any) -> NoReturn
         raise Exception("Outgoing network requests are not allowed in the Zulip tests. "
                         "More details and advice are available here:"
                         "https://zulip.readthedocs.io/en/latest/testing/testing.html#internet-access-inside-test-suites")

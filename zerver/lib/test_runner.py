@@ -113,39 +113,10 @@ def run_test(test: TestCase, result: TestResult) -> bool:
     flush_caches_for_testing()
 
     if not hasattr(test, "_pre_setup"):
-        # test_name is likely of the form unittest.loader.ModuleImportFailure.zerver.tests.test_upload
-        import_failure_prefix = 'unittest.loader.ModuleImportFailure.'
-        if test_name.startswith(import_failure_prefix):
-            actual_test_name = test_name[len(import_failure_prefix):]
-            error_msg = ("\nActual test to be run is %s, but import failed.\n"
-                         "Importing test module directly to generate clearer "
-                         "traceback:\n") % (actual_test_name,)
-            result.addInfo(test, error_msg)
-
-            try:
-                command = [sys.executable, "-c", "import %s" % (actual_test_name,)]
-                msg = "Import test command: `%s`" % (' '.join(command),)
-                result.addInfo(test, msg)
-                subprocess.check_call(command)
-            except subprocess.CalledProcessError:
-                msg = ("If that traceback is confusing, try doing the "
-                       "import inside `./manage.py shell`")
-                result.addInfo(test, msg)
-                result.addError(test, sys.exc_info())
-                return True
-
-            msg = ("Import unexpectedly succeeded! Something is wrong. Try "
-                   "running `import %s` inside `./manage.py shell`.\n"
-                   "If that works, you may have introduced an import "
-                   "cycle.") % (actual_test_name,)
-            import_error = (Exception, Exception(msg), None)  # type: Tuple[Any, Any, Any]
-            result.addError(test, import_error)
-            return True
-        else:
-            msg = "Test doesn't have _pre_setup; something is wrong."
-            error_pre_setup = (Exception, Exception(msg), None)  # type: Tuple[Any, Any, Any]
-            result.addError(test, error_pre_setup)
-            return True
+        msg = "Test doesn't have _pre_setup; something is wrong."
+        error_pre_setup = (Exception, Exception(msg), None)  # type: Tuple[Any, Any, Any]
+        result.addError(test, error_pre_setup)
+        return True
     test._pre_setup()
 
     start_time = time.time()
@@ -382,6 +353,14 @@ class ParallelTestSuite(django_runner.ParallelTestSuite):
         # definitions.
         self.subsuites = SubSuiteList(self.subsuites)  # type: ignore # Type of self.subsuites changes.
 
+def check_import_error(test_name: Text) -> None:
+    try:
+        # Directly using __import__ is not recommeded, but here it gives
+        # clearer traceback as compared to importlib.import_module.
+        __import__(test_name)
+    except ImportError as exc:
+        raise exc from exc  # Disable exception chaining in Python 3.
+
 class Runner(DiscoverRunner):
     test_suite = TestSuite
     test_loader = TestLoader()
@@ -431,23 +410,53 @@ class Runner(DiscoverRunner):
             destroy_test_databases()
         return super().teardown_test_environment(*args, **kwargs)
 
-    def run_tests(self, test_labels, extra_tests=None,
-                  full_suite=False, **kwargs):
-        # type: (List[str], Optional[List[TestCase]], bool, **Any) -> Tuple[bool, List[str]]
+    def test_imports(self, test_labels: List[str], suite: unittest.TestSuite) -> None:
+        prefix_old = 'unittest.loader.ModuleImportFailure.'  # Python <= 3.4
+        prefix_new = 'unittest.loader._FailedTest.'  # Python > 3.4
+        error_prefixes = [prefix_old, prefix_new]
+        for test_name in get_test_names(suite):
+            for prefix in error_prefixes:
+                if test_name.startswith(prefix):
+                    test_name = test_name[len(prefix):]
+                    for label in test_labels:
+                        # This code block is for Python 3.5 when test label is
+                        # directly provided, for example:
+                        # ./tools/test-backend zerver.tests.test_alert_words.py
+                        #
+                        # In this case, the test name is of this form:
+                        # 'unittest.loader._FailedTest.test_alert_words'
+                        #
+                        # Whereas check_import_error requires test names of
+                        # this form:
+                        # 'unittest.loader._FailedTest.zerver.tests.test_alert_words'.
+                        if test_name in label:
+                            test_name = label
+                            break
+                    check_import_error(test_name)
+
+    def run_tests(self, test_labels: List[str],
+                  extra_tests: Optional[List[TestCase]]=None,
+                  full_suite: bool=False,
+                  **kwargs: Any) -> Tuple[bool, List[str]]:
         self.setup_test_environment()
         try:
             suite = self.build_suite(test_labels, extra_tests)
         except AttributeError:
-            traceback.print_exc()
-            print()
-            print("  This is often caused by a test module/class/function that doesn't exist or ")
-            print("  import properly. You can usually debug in a `manage.py shell` via e.g. ")
-            print("    import zerver.tests.test_messages")
-            print("    from zerver.tests.test_messages import StreamMessagesTest")
-            print("    StreamMessagesTest.test_message_to_stream")
-            print()
-            sys.exit(1)
+            # We are likely to get here only when running tests in serial
+            # mode on Python 3.4 or lower.
+            # test_labels are always normalized to include the correct prefix.
+            # If we run the command with ./tools/test-backend test_alert_words,
+            # test_labels will be equal to ['zerver.tests.test_alert_words'].
+            for test_label in test_labels:
+                check_import_error(test_label)
 
+            # I think we won't reach this line under normal circumstances, but
+            # for some unforeseen scenario in which the AttributeError was not
+            # caused by an import error, let's re-raise the exception for
+            # debugging purposes.
+            raise
+
+        self.test_imports(test_labels, suite)
         if self.parallel == 1:
             # We are running in serial mode so create the databases here.
             # For parallel mode, the databases are created in init_worker.
@@ -469,8 +478,17 @@ class Runner(DiscoverRunner):
             write_instrumentation_reports(full_suite=full_suite)
         return failed, result.failed_tests
 
-def get_test_names(suite: TestSuite) -> List[str]:
-    return [full_test_name(t) for t in get_tests_from_suite(suite)]
+def get_test_names(suite: unittest.TestSuite) -> List[str]:
+    if isinstance(suite, ParallelTestSuite):
+        # suite is ParallelTestSuite. It will have a subsuites parameter of
+        # type SubSuiteList. Each element of a SubsuiteList is a tuple whose
+        # first element is the type of TestSuite and the second element is a
+        # list of test names in that test suite. See serialize_suite() for the
+        # implementation details.
+        return [name for subsuite in suite.subsuites for name in subsuite[1]]
+    else:
+        suite = cast(TestSuite, suite)
+        return [full_test_name(t) for t in get_tests_from_suite(suite)]
 
 def get_tests_from_suite(suite: TestSuite) -> TestCase:
     for test in suite:

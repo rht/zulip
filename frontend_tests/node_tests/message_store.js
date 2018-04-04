@@ -60,20 +60,6 @@ people.add_in_realm(cindy);
 
 global.people.initialize_current_user(me.user_id);
 
-(function test_insert_recent_private_message() {
-    message_store.insert_recent_private_message('1', 1001);
-    message_store.insert_recent_private_message('2', 2001);
-    message_store.insert_recent_private_message('1', 3001);
-
-    // try to backdate user1's timestamp
-    message_store.insert_recent_private_message('1', 555);
-
-    assert.deepEqual(message_store.recent_private_messages, [
-        {user_ids_string: '1', timestamp: 3001},
-        {user_ids_string: '2', timestamp: 2001},
-    ]);
-}());
-
 (function test_add_message_metadata() {
     var message = {
         sender_email: 'me@example.com',
@@ -84,6 +70,7 @@ global.people.initialize_current_user(me.user_id);
         is_me_message: false,
         id: 2067,
     };
+    message_store.set_message_booleans(message);
     message_store.add_message_metadata(message);
 
     assert.equal(message.is_private, true);
@@ -128,6 +115,7 @@ global.people.initialize_current_user(me.user_id);
         });
         global.with_stub(function (stub) {
             set_global('composebox_typeahead', {add_topic: stub.f});
+            message_store.set_message_booleans(message);
             message_store.add_message_metadata(message);
             var typeahead_added = stub.get_args('stream', 'subject');
             assert.deepEqual(typeahead_added.stream, [me, cindy]);
@@ -136,7 +124,7 @@ global.people.initialize_current_user(me.user_id);
 
         assert.deepEqual(message.stream, [me, cindy]);
         assert.equal(message.reply_to, 'me@example.com');
-        assert.deepEqual(message.flags, []);
+        assert.deepEqual(message.flags, undefined);
         assert.equal(message.alerted, false);
     });
 
@@ -179,6 +167,38 @@ global.people.initialize_current_user(me.user_id);
     });
     message_store.process_message_for_recent_private_messages(message);
     assert.equal(num_partner, 0);
+}());
+
+(function test_update_booleans() {
+    var message = {};
+
+    // First, test fields that we do actually want to update.
+    message.mentioned = false;
+    message.mentioned_me_directly = false;
+    message.alerted = false;
+
+    var flags = ['mentioned', 'has_alert_word', 'read'];
+    message_store.update_booleans(message, flags);
+    assert.equal(message.mentioned, true);
+    assert.equal(message.mentioned_me_directly, true);
+    assert.equal(message.alerted, true);
+
+    flags = ['read'];
+    message_store.update_booleans(message, flags);
+    assert.equal(message.mentioned, false);
+    assert.equal(message.mentioned_me_directly, false);
+    assert.equal(message.alerted, false);
+
+    // Make sure we don't muck with unread.
+    message.unread = false;
+    flags = [''];
+    message_store.update_booleans(message, flags);
+    assert.equal(message.unread, false);
+
+    message.unread = true;
+    flags = ['read'];
+    message_store.update_booleans(message, flags);
+    assert.equal(message.unread, true);
 }());
 
 (function test_message_id_change() {

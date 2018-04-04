@@ -12,6 +12,7 @@
                         <span class="value"></span>
                     </span>
                 </a>
+                <span class="arrow stream-sidebar-arrow"><i class="icon-vector-chevron-down"></i></span>
             </li>
             <li data-name="private" class="global-filter" title="{{ _('Private messages') }} (P)">
                 <a href="#narrow/is/private">
@@ -45,10 +46,9 @@
             </li>
         </ul>
         <div id="streams_list" class="zoom-out">
-            <div id="streams_header" class="zoom-in-hide"><h4 class="sidebar-title" data-toggle="tooltip" title="{{ _('Subscribed streams') }}"><a href="">{{ _('STREAMS') }}</a></h4>
+            <div id="streams_header" class="zoom-in-hide"><h4 class="sidebar-title" data-toggle="tooltip" title="{{ _('Subscribed streams') }}">{{ _('STREAMS') }}</h4>
                 <i id="streams_inline_cog" class='icon-vector-cog' data-toggle="tooltip" title="{{ _('Subscribe, add, or configure streams') }}"></i>
                 <i id="streams_filter_icon" class='icon-vector-search' data-toggle="tooltip" title="{{ _('Filter streams') }} (q)"></i>
-                <i id="join_unsub_stream" class="icon-vector-plus" data-toggle="tooltip" title="{{ _('Join stream')}}" ></i>
             </div>
             <div id="topics_header">
                 <a href="" class="show-all-streams"> <i class="icon-vector-chevron-left"></i>{{ _('All streams') }}</a>
@@ -56,7 +56,7 @@
             <div id="stream-filters-container" class="scrolling_list">
                 <div class="input-append notdisplayed">
                     <input class="stream-list-filter" type="text" placeholder="{{ _('Search streams') }}" />
-                    <button type="button" class="btn clear_search_button" id="clear_search_stream_button" disabled="disabled">
+                    <button type="button" class="btn clear_search_button" id="clear_search_stream_button">
                         <i class="icon-vector-remove"></i>
                     </button>
                 </div>

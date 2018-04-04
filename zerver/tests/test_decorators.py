@@ -29,11 +29,13 @@ from zerver.lib.request import \
     RequestVariableConversionError
 from zerver.decorator import (
     api_key_only_webhook_view,
+    authenticated_api_view,
     authenticate_notify, cachify,
     get_client_name, internal_notify_view, is_local_addr,
     rate_limit, validate_api_key, logged_in_and_active,
     return_success_on_head_request
 )
+from zerver.lib.cache import ignore_unhashable_lru_cache
 from zerver.lib.validator import (
     check_string, check_dict, check_dict_only, check_bool, check_float, check_int, check_list, Validator,
     check_variable_type, equals, check_none_or, check_url, check_short_string
@@ -223,7 +225,7 @@ class DecoratorTestCase(TestCase):
         request.POST['api_key'] = 'not_existing_api_key'
 
         with self.assertRaisesRegex(JsonableError, "Invalid API key"):
-            my_webhook(request)
+            my_webhook(request)  # type: ignore # mypy doesn't seem to apply the decorator
 
         # Start a valid request here
         request.POST['api_key'] = webhook_bot_api_key
@@ -231,7 +233,7 @@ class DecoratorTestCase(TestCase):
         with mock.patch('logging.warning') as mock_warning:
             with self.assertRaisesRegex(JsonableError,
                                         "Account is not associated with this subdomain"):
-                api_result = my_webhook(request)
+                api_result = my_webhook(request)  # type: ignore # mypy doesn't seem to apply the decorator
 
             mock_warning.assert_called_with(
                 "User {} ({}) attempted to access API on wrong "
@@ -241,7 +243,7 @@ class DecoratorTestCase(TestCase):
             with self.assertRaisesRegex(JsonableError,
                                         "Account is not associated with this subdomain"):
                 request.host = "acme." + settings.EXTERNAL_HOST
-                api_result = my_webhook(request)
+                api_result = my_webhook(request)  # type: ignore # mypy doesn't seem to apply the decorator
 
             mock_warning.assert_called_with(
                 "User {} ({}) attempted to access API on wrong "
@@ -255,7 +257,7 @@ class DecoratorTestCase(TestCase):
             with self.assertRaisesRegex(Exception, "raised by webhook function"):
                 request.body = "{}"
                 request.content_type = 'application/json'
-                my_webhook_raises_exception(request)
+                my_webhook_raises_exception(request)  # type: ignore # mypy doesn't seem to apply the decorator
 
         # Test when content_type is not application/json; exception raised
         # in the webhook function should be re-raised
@@ -263,7 +265,7 @@ class DecoratorTestCase(TestCase):
             with self.assertRaisesRegex(Exception, "raised by webhook function"):
                 request.body = "notjson"
                 request.content_type = 'text/plain'
-                my_webhook_raises_exception(request)
+                my_webhook_raises_exception(request)  # type: ignore # mypy doesn't seem to apply the decorator
 
         # Test when content_type is application/json but request.body
         # is not valid JSON; invalid JSON should be logged and the
@@ -272,29 +274,34 @@ class DecoratorTestCase(TestCase):
             with self.assertRaisesRegex(Exception, "raised by webhook function"):
                 request.body = "invalidjson"
                 request.content_type = 'application/json'
-                my_webhook_raises_exception(request)
+                request.META['HTTP_X_CUSTOM_HEADER'] = 'custom_value'
+                my_webhook_raises_exception(request)  # type: ignore # mypy doesn't seem to apply the decorator
 
             message = """
 user: {email} ({realm})
 client: {client_name}
 URL: {path_info}
 content_type: {content_type}
+custom_http_headers:
+{custom_headers}
 body:
 
 {body}
                 """
+            message = message.strip(' ')
             mock_exception.assert_called_with(message.format(
                 email=webhook_bot_email,
                 realm=webhook_bot_realm.string_id,
                 client_name=webhook_client_name,
                 path_info=request.META.get('PATH_INFO'),
                 content_type=request.content_type,
+                custom_headers="HTTP_X_CUSTOM_HEADER: custom_value\n",
                 body=request.body,
             ))
 
         with self.settings(RATE_LIMITING=True):
             with mock.patch('zerver.decorator.rate_limit_user') as rate_limit_mock:
-                api_result = my_webhook(request)
+                api_result = my_webhook(request)  # type: ignore # mypy doesn't seem to apply the decorator
 
         # Verify rate limiting was attempted.
         self.assertTrue(rate_limit_mock.called)
@@ -311,16 +318,60 @@ body:
         webhook_bot.is_active = False
         webhook_bot.save()
         with self.assertRaisesRegex(JsonableError, "Account not active"):
-            my_webhook(request)
+            my_webhook(request)  # type: ignore # mypy doesn't seem to apply the decorator
 
         # Reactive the user, but deactivate their realm.
         webhook_bot.is_active = True
         webhook_bot.save()
         webhook_bot.realm.deactivated = True
         webhook_bot.realm.save()
-        with self.assertRaisesRegex(JsonableError, "Realm for account has been deactivated"):
-            my_webhook(request)
+        with self.assertRaisesRegex(JsonableError, "This organization has been deactivated"):
+            my_webhook(request)  # type: ignore # mypy doesn't seem to apply the decorator
 
+    def test_authenticated_api_view_logging(self) -> None:
+        @authenticated_api_view(is_webhook=True)
+        def my_webhook_raises_exception(request: HttpRequest, user_profile: UserProfile) -> None:
+            raise Exception("raised by webhook function")
+
+        webhook_bot_email = 'webhook-bot@zulip.com'
+        webhook_bot_realm = get_realm('zulip')
+        webhook_bot = get_user(webhook_bot_email, webhook_bot_realm)
+        webhook_bot_api_key = webhook_bot.api_key
+
+        request = HostRequestMock()
+        request.method = 'POST'
+        request.POST['api_key'] = webhook_bot_api_key
+        request.POST['email'] = webhook_bot_email
+        request.host = "zulip.testserver"
+
+        with mock.patch('zerver.decorator.webhook_logger.exception') as mock_exception:
+            with self.assertRaisesRegex(Exception, "raised by webhook function"):
+                request.body = '{}'
+                request.POST['payload'] = '{}'
+                request.content_type = 'text/plain'
+                my_webhook_raises_exception(request)  # type: ignore # mypy doesn't seem to apply the decorator
+
+            message = """
+user: {email} ({realm})
+client: {client_name}
+URL: {path_info}
+content_type: {content_type}
+custom_http_headers:
+{custom_headers}
+body:
+
+{body}
+                """
+            message = message.strip(' ')
+            mock_exception.assert_called_with(message.format(
+                email=webhook_bot_email,
+                realm=webhook_bot_realm.string_id,
+                client_name='Unspecified',
+                path_info=request.META.get('PATH_INFO'),
+                content_type=request.content_type,
+                custom_headers=None,
+                body=request.body,
+            ))
 
 class RateLimitTestCase(TestCase):
     def errors_disallowed(self) -> mock:
@@ -437,7 +488,7 @@ class ValidatorTestCase(TestCase):
         self.assertEqual(check_short_string('x', x), None)
 
         x = 'x' * 201
-        self.assertEqual(check_short_string('x', x), 'x is longer than 200.')
+        self.assertEqual(check_short_string('x', x), 'x is longer than 50.')
 
         x = 4
         self.assertEqual(check_short_string('x', x), 'x is not a string')
@@ -517,6 +568,19 @@ class ValidatorTestCase(TestCase):
         error = check_dict(keys)('x', x)
         self.assertEqual(error, 'x["city"] is not a string')
 
+        x = {
+            'names': ['alice', 'bob'],
+            'city': 'Boston'
+        }
+        error = check_dict(value_validator=check_string)('x', x)
+        self.assertEqual(error, 'x contains a value that is not a string')
+
+        x = {
+            'city': 'Boston'
+        }
+        error = check_dict(value_validator=check_string)('x', x)
+        self.assertEqual(error, None)
+
         # test dict_only
         x = {
             'names': ['alice', 'bob'],
@@ -577,14 +641,16 @@ class ValidatorTestCase(TestCase):
 
     def test_check_url(self) -> None:
         url = "http://127.0.0.1:5002/"  # type: Any
-        check_url('url', url)
+        self.assertEqual(check_url('url', url), None)
 
         url = "http://zulip-bots.example.com/"
-        check_url('url', url)
+        self.assertEqual(check_url('url', url), None)
 
         url = "http://127.0.0"
-        with self.assertRaises(JsonableError):
-            check_url('url', url)
+        self.assertEqual(check_url('url', url), 'url is not a URL')
+
+        url = 99.3
+        self.assertEqual(check_url('url', url), 'url is not a string')
 
 class DeactivatedRealmTest(ZulipTestCase):
     def test_send_deactivated_realm(self) -> None:
@@ -876,6 +942,10 @@ class TestValidateApiKey(ZulipTestCase):
                                    is_webhook=True)
         self.assertEqual(profile.id, self.webhook_bot.id)
 
+    def test_validate_api_key_if_email_is_case_insensitive(self) -> None:
+        profile = validate_api_key(HostRequestMock(host="zulip.testserver"), self.default_bot.email.upper(), self.default_bot.api_key)
+        self.assertEqual(profile.id, self.default_bot.id)
+
     def test_valid_api_key_if_user_is_on_wrong_subdomain(self) -> None:
         with self.settings(RUNNING_INSIDE_TORNADO=False):
             with mock.patch('logging.warning') as mock_warning:
@@ -1061,12 +1131,14 @@ class TestAuthenticatedJsonPostViewDecorator(ZulipTestCase):
         # we deactivate user's realm manually because do_deactivate_user removes user session
         user_profile.realm.deactivated = True
         user_profile.realm.save()
-        self.assert_json_error_contains(self._do_test(user_email), "Realm for account has been deactivated")
+        self.assert_json_error_contains(self._do_test(user_email), "This organization has been deactivated")
         do_reactivate_realm(user_profile.realm)
 
     def _do_test(self, user_email: Text) -> HttpResponse:
-        data = {"password": initial_password(user_email)}
-        return self.client_post(r'/json/fetch_api_key', data)
+        stream_name = "stream name"
+        self.common_subscribe_to_streams(user_email, [stream_name])
+        data = {"password": initial_password(user_email), "stream": stream_name}
+        return self.client_post(r'/json/subscriptions/exists', data)
 
     def _login(self, user_email: Text, user_realm: Realm, password: str=None) -> None:
         if password:
@@ -1100,7 +1172,7 @@ class TestAuthenticatedJsonViewDecorator(ZulipTestCase):
 
     def _do_test(self, user_email: str) -> HttpResponse:
         data = {"password": initial_password(user_email)}
-        return self.client_post(r'/json/fetch_api_key', data)
+        return self.client_post(r'/accounts/webathena_kerberos_login/', data)
 
 class TestZulipLoginRequiredDecorator(ZulipTestCase):
     def test_zulip_login_required_if_subdomain_is_invalid(self) -> None:
@@ -1250,7 +1322,6 @@ class TestUserAgentParsing(ZulipTestCase):
         """Test for our user agent parsing logic, using a large data set."""
         user_agents_parsed = defaultdict(int)  # type: Dict[str, int]
         user_agents_path = os.path.join(settings.DEPLOY_ROOT, "zerver/fixtures/user_agents_unique")
-        parse_errors = []
         for line in open(user_agents_path).readlines():
             line = line.strip()
             match = re.match('^(?P<count>[0-9]+) "(?P<user_agent>.*)"$', line)
@@ -1259,10 +1330,54 @@ class TestUserAgentParsing(ZulipTestCase):
             count = groupdict["count"]
             user_agent = groupdict["user_agent"]
             ret = parse_user_agent(user_agent)
-            self.assertIsNotNone(ret)
-            if ret is None:  # nocoverage
-                parse_errors.append(line)
-                continue
             user_agents_parsed[ret["name"]] += int(count)
 
-        self.assertEqual(len(parse_errors), 0)
+
+class TestIgnoreUnhashableLRUCache(ZulipTestCase):
+    def test_cache_hit(self) -> None:
+        @ignore_unhashable_lru_cache()
+        def f(arg: Any) -> Any:
+            return arg
+
+        def get_cache_info() -> Tuple[int, int, int]:
+            info = getattr(f, 'cache_info')()
+            hits = getattr(info, 'hits')
+            misses = getattr(info, 'misses')
+            currsize = getattr(info, 'currsize')
+            return hits, misses, currsize
+
+        def clear_cache() -> None:
+            getattr(f, 'cache_clear')()
+
+        # Check hashable argument.
+        result = f(1)
+        hits, misses, currsize = get_cache_info()
+        # First one should be a miss.
+        self.assertEqual(hits, 0)
+        self.assertEqual(misses, 1)
+        self.assertEqual(currsize, 1)
+        self.assertEqual(result, 1)
+
+        result = f(1)
+        hits, misses, currsize = get_cache_info()
+        # Second one should be a hit.
+        self.assertEqual(hits, 1)
+        self.assertEqual(misses, 1)
+        self.assertEqual(currsize, 1)
+        self.assertEqual(result, 1)
+
+        # Check unhashable argument.
+        result = f([1])
+        hits, misses, currsize = get_cache_info()
+        # Cache should not be used.
+        self.assertEqual(hits, 1)
+        self.assertEqual(misses, 1)
+        self.assertEqual(currsize, 1)
+        self.assertEqual(result, [1])
+
+        # Clear cache.
+        clear_cache()
+        hits, misses, currsize = get_cache_info()
+        self.assertEqual(hits, 0)
+        self.assertEqual(misses, 0)
+        self.assertEqual(currsize, 0)

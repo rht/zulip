@@ -4,59 +4,43 @@ set -e
 usage() {
     cat <<EOF
 Usage:
-  install [--certbot] [--hostname=zulip.example.com] [--email=admin@example.com]
+  install --hostname=zulip.example.com --email=admin@example.com [options...]
   install --help
 
-If --certbot is used, --hostname and --email are required.
+Other options:
+  --certbot
+  --self-signed-cert
+  --no-init-db
+
+The --hostname and --email options are required,
+unless --no-init-db is set and --certbot is not.
+
 EOF
     exit 0
 };
 
 # Shell option parsing.  Over time, we'll want to move some of the
 # environment variables below into this self-documenting system.
-args="$(getopt -o '' --long help,certbot,hostname:,email: -n "$0" -- "$@")"
+args="$(getopt -o '' --long help,no-init-db,self-signed-cert,certbot,hostname:,email: -n "$0" -- "$@")"
 eval "set -- $args"
 while true; do
     case "$1" in
-        --certbot)
-            USE_CERTBOT=1
-            shift
-            ;;
-        --help)
-            show_help=1
-            shift
-            ;;
-        --hostname)
-            EXTERNAL_HOST="$2"
-            shift
-            shift
-            ;;
-        --email)
-            ZULIP_ADMINISTRATOR="$2"
-            shift
-            shift
-            ;;
-        --)
-            break
-            ;;
+        --help) usage;;
+        --self-signed-cert) SELF_SIGNED_CERT=1; shift;;
+        --certbot) USE_CERTBOT=1; shift;;
+        --hostname) EXTERNAL_HOST="$2"; shift; shift;;
+        --email) ZULIP_ADMINISTRATOR="$2"; shift; shift;;
+        --no-init-db) NO_INIT_DB=1; shift;;
+        --) shift; break;;
     esac
 done
 
-if [ -n "$show_help" ]; then
+if [ "$#" -gt 0 ]; then
     usage
 fi
 
-if [ -n "$USE_CERTBOT" ] \
-       && { [ -z "$EXTERNAL_HOST" ] || [ -z "$ZULIP_ADMINISTRATOR" ]; }; then
-    usage
-fi
-
-# Do set -x after option parsing is complete
-set -x
-
-# Force a known locale.  Some packages on PyPI fail to install in some locales.
-export LC_ALL="en_US.UTF-8"
-
+## Options from environment variables.
+#
 # Specify options for apt.
 APT_OPTIONS="${APT_OPTIONS:-}"
 # Install additional packages using apt.
@@ -69,6 +53,47 @@ DEPLOYMENT_TYPE="${DEPLOYMENT_TYPE:-voyager}"
 PUPPET_CLASSES="${PUPPET_CLASSES:-zulip::voyager}"
 VIRTUALENV_NEEDED="${VIRTUALENV_NEEDED:-yes}"
 
+if [ -n "$SELF_SIGNED_CERT" ] && [ -n "$USE_CERTBOT" ]; then
+    echo "error: --self-signed-cert and --certbot are incompatible" >&2
+    echo >&2
+    usage
+fi
+
+if [ -z "$EXTERNAL_HOST" ] || [ -z "$ZULIP_ADMINISTRATOR" ]; then
+    if [ -n "$USE_CERTBOT" ] || [ -z "$NO_INIT_DB" ]; then
+        usage
+    fi
+fi
+
+# Do set -x after option parsing is complete
+set -x
+
+ZULIP_PATH="$(readlink -f $(dirname $0)/../..)"
+
+# Force a known locale.  Some packages on PyPI fail to install in some locales.
+export LC_ALL="en_US.UTF-8"
+
+# Check for a supported OS release.
+apt-get install -y lsb-release
+os_release="$(lsb_release -sc)"
+case "$os_release" in
+    trusty|xenial) ;;
+    *)
+        set +x
+        cat <<EOF
+
+Unsupported OS release: $os_release
+
+Zulip in production is supported only on:
+ - Ubuntu 14.04 LTS "trusty"
+ - Ubuntu 16.04 LTS "xenial"
+
+For more information, see:
+  https://zulip.readthedocs.io/en/latest/production/requirements.html
+EOF
+        exit 1
+esac
+
 # Check for at least ~1.9GB of RAM before starting installation;
 # otherwise users will find out about insufficient RAM via weird
 # errors like a segfault running `pip install`.
@@ -78,42 +103,45 @@ if [ "$mem_kb" -lt 1900000 ]; then
     exit 1
 fi
 
-if ! [ -e /usr/bin/realpath ]; then
-    # realpath is in coreutils on Xenial, but not in Trusty
-    apt-get install -y realpath
-fi
-
-ZULIP_PATH="$(realpath $(dirname $0)/../..)"
-
 # setup-apt-repo does an `apt-get update`
 "$ZULIP_PATH"/scripts/lib/setup-apt-repo
 
 # Handle issues around upstart on Ubuntu Xenial
 "$ZULIP_PATH"/scripts/lib/check-upstart
 
-if [ -n "$USE_CERTBOT" ]; then
-    "$ZULIP_PATH"/scripts/setup/setup-certbot \
-        --no-zulip-conf --method=standalone \
-        --hostname "$EXTERNAL_HOST" --email "$ZULIP_ADMINISTRATOR"
-fi
+# Check early for missing SSL certificates
+if [ "$PUPPET_CLASSES" = "zulip::voyager" ] && [ -z "$USE_CERTBOT""$SELF_SIGNED_CERT" ] && { ! [ -e "/etc/ssl/private/zulip.key" ] || ! [ -e "/etc/ssl/certs/zulip.combined-chain.crt" ]; }; then
+    set +x
+    echo
+    echo "Could not find SSL certificates!"
+    for f in "/etc/ssl/private/zulip.key" "/etc/ssl/certs/zulip.combined-chain.crt"; do
+        [ -e "$f" ] || echo " - $f is missing!"
+    done
+    cat <<EOF
 
-# Check for missing SSL certificates early as well
-if [ "$PUPPET_CLASSES" = "zulip::voyager" ] && { ! [ -e "/etc/ssl/private/zulip.key" ] || ! [ -e "/etc/ssl/certs/zulip.combined-chain.crt" ]; }; then
-   set +x
-   echo
-   echo "Could not find SSL certificates!"
-   for f in "/etc/ssl/private/zulip.key" "/etc/ssl/certs/zulip.combined-chain.crt"; do
-       [ -e "$f" ] || echo " - $f is missing!"
-   done
-   echo "See https://zulip.readthedocs.io/en/latest/production/ssl-certificates.html for help."
-   echo
-   echo "Once fixed, just rerun scripts/setup/install; it'll pick up from here!"
-   echo
+See https://zulip.readthedocs.io/en/latest/production/ssl-certificates.html for help.
+For non-production testing, try the --self-signed-cert option.
+
+Once fixed, just rerun scripts/setup/install; it'll pick up from here!
+
+EOF
    exit 1
 fi
 
 apt-get -y dist-upgrade $APT_OPTIONS
-apt-get install -y puppet git python python3 python-six python3-six crudini $ADDITIONAL_PACKAGES
+apt-get install -y \
+    puppet git curl wget \
+    python python3 python-six python3-six crudini \
+    $ADDITIONAL_PACKAGES
+
+if [ -n "$USE_CERTBOT" ]; then
+    "$ZULIP_PATH"/scripts/setup/setup-certbot \
+        --no-zulip-conf --method=standalone \
+        --hostname "$EXTERNAL_HOST" --email "$ZULIP_ADMINISTRATOR"
+elif [ -n "$SELF_SIGNED_CERT" ]; then
+    "$ZULIP_PATH"/scripts/setup/generate-self-signed-cert \
+        --exists-ok "${EXTERNAL_HOST:-$(hostname)}"
+fi
 
 # Create and activate a virtualenv
 if [ "$VIRTUALENV_NEEDED" = "yes" ]; then
@@ -122,10 +150,14 @@ fi
 
 "$ZULIP_PATH"/scripts/lib/install-node
 
-# puppet apply
+# Generate /etc/zulip/zulip.conf .
 mkdir -p /etc/zulip
 (
-    echo -e "[machine]\npuppet_classes = $PUPPET_CLASSES\ndeploy_type = $DEPLOYMENT_TYPE";
+    cat <<EOF
+[machine]
+puppet_classes = $PUPPET_CLASSES
+deploy_type = $DEPLOYMENT_TYPE
+EOF
 
     # Note: there are four dpkg-query outputs to consider:
     #
@@ -143,13 +175,22 @@ mkdir -p /etc/zulip
     # (There are more possibilities in the case of dpkg errors.)  Here
     # we are checking for either empty or not-installed.
     if [ -n "$TRAVIS" ] || ! dpkg-query --showformat '${Status}\n' -W rabbitmq-server 2>/dev/null | grep -vq ' not-installed$'; then
-        echo -e "\n[rabbitmq]\nnodename = zulip@localhost"
+        cat <<EOF
+
+[rabbitmq]
+nodename = zulip@localhost
+EOF
     fi
 
     if [ -n "$USE_CERTBOT" ]; then
-        echo -e "\n[certbot]\nauto_renew = yes"
+        cat <<EOF
+
+[certbot]
+auto_renew = yes
+EOF
     fi
 ) > /etc/zulip/zulip.conf
+
 "$ZULIP_PATH"/scripts/zulip-puppet-apply -f
 
 # Detect which features were selected for the below
@@ -178,14 +219,16 @@ if [ "$has_nginx" = 0 ]; then
     # Most common failure mode is certs not having been installed.
     nginx -t || (
         set +x
-        echo
-        echo "Verifying the Zulip nginx configuration failed!"
-        echo
-        echo "This is almost always a problem with your SSL certificates."
-        echo "See https://zulip.readthedocs.io/en/latest/production/ssl-certificates.html for help"
-        echo
-        echo "Once fixed, just rerun scripts/setup/install; it'll pick up from here!"
-        echo
+        cat <<EOF
+
+Verifying the Zulip nginx configuration failed!
+
+This is almost always a problem with your SSL certificates.  See:
+  https://zulip.readthedocs.io/en/latest/production/ssl-certificates.html
+
+Once fixed, just rerun scripts/setup/install; it'll pick up from here!
+
+EOF
         exit 1
     )
     service nginx restart
@@ -204,20 +247,25 @@ if [ "$has_appserver" = 0 ]; then
 fi
 
 # Restart camo since generate_secrets.py likely replaced its secret key
-if [ "$has_camo" = 0 ] && [ -z "$TRAVIS" ]; then
-    # We don't run this in Travis CI due to a weird hang bug
-    service camo restart
+if [ "$has_camo" = 0 ]; then
+    # Cut off stdin because a bug in the Debian packaging for camo
+    # causes our stdin to leak to the daemon, which can cause tools
+    # invoking the installer to hang.
+    # TODO: fix in Debian too.
+    service camo restart </dev/null
 fi
 
 if [ "$has_rabbit" = 0 ]; then
     if ! rabbitmqctl status >/dev/null; then
         set +x
-        echo; echo "RabbitMQ seems to not have started properly after the installation process."
-        echo "Often, this can be caused by misconfigured /etc/hosts in virtualized environments"
-        echo "See https://github.com/zulip/zulip/issues/53#issuecomment-143805121"
-        echo "for more information"
-        echo
-        set -x
+        cat <<EOF
+
+RabbitMQ seems to not have started properly after the installation process.
+Often this is caused by misconfigured /etc/hosts in virtualized environments.
+For more information, see:
+  https://github.com/zulip/zulip/issues/53#issuecomment-143805121
+
+EOF
         exit 1
     fi
     "$ZULIP_PATH"/scripts/setup/configure-rabbitmq
@@ -247,20 +295,22 @@ if [ "$has_appserver" = 0 ]; then
 fi
 
 if [ -e "/var/run/supervisor.sock" ]; then
-    # If supervisor isn't running, no need to chown its socket
     chown zulip:zulip /var/run/supervisor.sock
 fi
 
-set +x
-cat <<EOF
+if [ -n "$NO_INIT_DB" ]; then
+    set +x
+    cat <<EOF
 
- Installation complete!
+ Success!
 
- Now edit /etc/zulip/settings.py and fill in the mandatory values.
+ Stopping because --no-init-db was passed.  To complete the installation, run:
 
- Once you've done that, please run:
-
- su zulip -c /home/zulip/deployments/current/scripts/setup/initialize-database
-
- To configure the initial database.
+   su zulip -c /home/zulip/deployments/current/scripts/setup/initialize-database
 EOF
+    exit 0
+fi
+
+su zulip -c '/home/zulip/deployments/current/scripts/setup/initialize-database --quiet'
+
+su zulip -c '/home/zulip/deployments/current/manage.py generate_realm_creation_link'

@@ -1,7 +1,7 @@
 from typing import Any, List, Dict, Optional, Text, Iterator
 
 from django.conf import settings
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.http import HttpResponseRedirect, HttpResponse, HttpRequest
 from django.shortcuts import redirect, render
 from django.utils import translation
@@ -64,14 +64,13 @@ def sent_time_in_epoch_seconds(user_message: Optional[UserMessage]) -> Optional[
     # Return the epoch seconds in UTC.
     return calendar.timegm(user_message.message.pub_date.utctimetuple())
 
-def get_bot_types():
-    # type: () -> List[Dict[Text, object]]
+def get_bot_types(user_profile: UserProfile) -> List[Dict[Text, object]]:
     bot_types = []
     for type_id, name in UserProfile.BOT_TYPES.items():
         bot_types.append({
             'type_id': type_id,
             'name': name,
-            'allowed': type_id in UserProfile.ALLOWED_BOT_TYPES
+            'allowed': type_id in user_profile.allowed_bot_types
         })
     return bot_types
 
@@ -127,7 +126,9 @@ def home_real(request: HttpRequest) -> HttpResponse:
 
     # Reset our don't-spam-users-with-email counter since the
     # user has since logged in
-    if user_profile.last_reminder is not None:
+    if user_profile.last_reminder is not None:  # nocoverage
+        # TODO: Look into the history of last_reminder; we may have
+        # eliminated that as a useful concept for non-bot users.
         user_profile.last_reminder = None
         user_profile.save(update_fields=["last_reminder"])
 
@@ -184,10 +185,12 @@ def home_real(request: HttpRequest) -> HttpResponse:
         server_generation     = settings.SERVER_GENERATION,
         use_websockets        = settings.USE_WEBSOCKETS,
         save_stacktraces      = settings.SAVE_FRONTEND_STACKTRACES,
+        warn_no_email         = settings.WARN_NO_EMAIL,
         server_inline_image_preview = settings.INLINE_IMAGE_PREVIEW,
         server_inline_url_embed_preview = settings.INLINE_URL_EMBED_PREVIEW,
         password_min_length = settings.PASSWORD_MIN_LENGTH,
         password_min_guesses  = settings.PASSWORD_MIN_GUESSES,
+        jitsi_server_url      = settings.JITSI_SERVER_URL,
 
         # Misc. extra data.
         have_initial_messages = user_has_messages,
@@ -200,7 +203,7 @@ def home_real(request: HttpRequest) -> HttpResponse:
         prompt_for_invites    = prompt_for_invites,
         furthest_read_time    = sent_time_in_epoch_seconds(latest_read),
         has_mobile_devices    = num_push_devices_for_user(user_profile) > 0,
-        bot_types             = get_bot_types(),
+        bot_types             = get_bot_types(user_profile),
     )
 
     undesired_register_ret_fields = [

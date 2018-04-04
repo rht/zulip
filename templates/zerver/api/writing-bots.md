@@ -8,9 +8,8 @@ third-party service.
 * **Interactive bots**, for when you want the tool to react to
   messages in Zulip.
 
-* This guide is about writing and testing interactive bots. We assume
- familiarity with our
- [guide for running bots](running-bots).
+This guide is about writing and testing interactive bots. We assume
+familiarity with our [guide for running bots](running-bots).
 
 On this page you'll find:
 
@@ -120,28 +119,27 @@ we have a little tool to help you out: `zulip-terminal`
 
 * [Install all requirements](#installing-a-development-version-of-the-zulip-bots-package).
 
-* Run `zulip-terminal -b <path-to-bot.config> <bot-name>` to test one of the bots in
+* Run `zulip-terminal` to test one of the bots in
   [`zulip_bots/bots`](https://github.com/zulip/python-zulip-api/tree/master/zulip_bots/zulip_bots/bots).
-  Here, the `-b` or `--bot-config-file` arguement is for optional third party config file (e.g. ~/giphy.conf)
 
-  * Example: `zulip-terminal converter`
-    ```
-    Enter your message: "12 meter yard"
-    Response: 12.0 meter = 13.12336 yard
-    ```
-  * Example: `zulip-terminal -b ~/followup.conf followup`
-    ```
-    Enter your message: "Task Completed"
-    Response: stream: followup topic: foo_sender@zulip.com
-              from foo_sender@zulip.com: Task Completed
-    ```
+Example invocations are below:
 
-* Run `zulip-terminal <path/to/bot.py>"` to specify the bot's path yourself.
-  * Example: `zulip-terminal zulip_bots/zulip_bots/bots/converter/converter.py`
-    ```
-    Enter your message: "12 meter yard"
-    Response: 12.0 meter = 13.12336 yard
-    ```
+```
+> zulip-terminal converter
+
+Enter your message: "12 meter yard"
+Response: 12.0 meter = 13.12336 yard
+
+> zulip-terminal -b ~/followup.conf followup
+
+Enter your message: "Task Completed"
+Response: stream: followup topic: foo_sender@zulip.com
+          from foo_sender@zulip.com: Task Completed
+
+```
+
+Note that the `-b` (aka `--bot-config-file`) argument is for an optional third party
+config file (e.g. ~/giphy.conf), which only applies to certain types of bots.
 
 ## Bot API
 
@@ -278,11 +276,6 @@ bot_handler.update_message(dict(
 ```
 
 ### bot_handler.storage
-
-**Note: This feature is under development. Permanent storage in the
-  database of a Zulip server is currently only supported for Zulip's embedded
-  bots. For external bots, all data stored with this feature is lost with
-  the termination of a bot.**
 
 A common problem when writing an interactive bot is that you want to
 be able to store a bit of persistent state for the bot (e.g. for an
@@ -470,7 +463,22 @@ following helper method:
         # self.assert_bot_response(...)
 
 `mock_http_conversation(fixture_name)` patches `requests.get` and returns the data specified
-in the file `fixtures/<fixture_name>.py`. For an example, check out the [giphy bot](
+in the file `fixtures/<fixture_name>.json`. Use the following JSON code as a skeleton for new
+fixtures:
+```
+{
+  "request": {
+    "api_url": "http://api.example.com/",
+    "params": {
+    }
+  },
+  "response": {
+  },
+  "response-headers": {
+  }
+}
+```
+For an example, check out the [giphy bot](
 https://github.com/zulip/python-zulip-api/tree/master/zulip_bots/zulip_bots/bots/giphy).
 
 *Tip: You can use [requestb.in](http://requestb.in) or a similar tool to capture payloads from the

@@ -1,4 +1,4 @@
-const Ps = require('perfect-scrollbar');
+import PerfectScrollbar from 'perfect-scrollbar';
 
 function registerCodeSection($codeSection) {
     const $li = $codeSection.find("ul.nav li");
@@ -17,10 +17,65 @@ function registerCodeSection($codeSection) {
     $li.eq(0).click();
 }
 
+function highlight_current_article() {
+    $('.help .sidebar a').removeClass('highlighted');
+    var path = window.location.href.match(/\/(help|api)\/.*/);
+
+    if (!path) {
+        return;
+    }
+
+    var article = $('.help .sidebar a[href="' + path[0] + '"]');
+    article.addClass('highlighted');
+}
+
+function adjust_mac_shortcuts() {
+    var keys_map = new Map([
+        ['Backspace', 'Delete'],
+        ['Enter', 'Return'],
+        ['Home', 'Fn + ⇽'],
+        ['End', 'Fn + ⇾'],
+        ['PgUp', 'Fn + ↑'],
+        ['PgDn', 'Fn + ↓'],
+    ]);
+
+    $(".markdown .content code").each(function () {
+        var text = $(this).text();
+
+        if (!keys_map.has(text)) {
+            return;
+        }
+
+        var key_string = keys_map.get(text);
+        var keys = key_string.match(/[^\s\+]+/g);
+
+        _.each(keys, function (key) {
+            key_string = key_string.replace(key, '<code>' + key + '</code>');
+        });
+
+        $(this).replaceWith(key_string);
+    });
+}
+
 function render_code_sections() {
     $(".code-section").each(function () {
         registerCodeSection($(this));
     });
+
+    highlight_current_article();
+
+    if (/Mac/i.test(navigator.userAgent)) {
+        adjust_mac_shortcuts();
+    }
+}
+
+function scrollToHash(container) {
+    var hash = window.location.hash;
+    if (hash !== '') {
+        container.scrollTop = $(hash).position().top - $('.markdown .content').position().top;
+    } else {
+        container.scrollTop = 0;
+    }
 }
 
 (function () {
@@ -39,20 +94,41 @@ function render_code_sections() {
         });
     };
 
+    var markdownPS = new PerfectScrollbar($(".markdown")[0], {
+        suppressScrollX: true,
+        useKeyboard: false,
+        wheelSpeed: 0.68,
+        scrollingThreshold: 50,
+    });
+
+    new PerfectScrollbar($(".sidebar")[0], {
+        suppressScrollX: true,
+        useKeyboard: false,
+        wheelSpeed: 0.68,
+        scrollingThreshold: 50,
+    });
+
     $(".sidebar.slide h2").click(function (e) {
         var $next = $(e.target).next();
 
         if ($next.is("ul")) {
             $next.slideToggle("fast", "swing", function () {
-                Ps.update($(".markdown")[0]);
+                markdownPS.update();
             });
         }
     });
 
     $(".sidebar a").click(function (e) {
         var path = $(this).attr("href");
-        var container = $(".markdown")[0];
+        var path_dir = path.split('/')[1];
+        var current_dir = window.location.pathname.split('/')[1];
 
+        // Do not block redirecting to external URLs
+        if (path_dir !== current_dir) {
+            return;
+        }
+
+        var container = $(".markdown")[0];
 
         if (loading.name === path) {
             return;
@@ -62,8 +138,9 @@ function render_code_sections() {
 
         if (html_map[path]) {
             $(".markdown .content").html(html_map[path]);
-            Ps.update(container);
+            markdownPS.update();
             render_code_sections();
+            scrollToHash(container);
         } else {
             loading.name = path;
 
@@ -71,11 +148,11 @@ function render_code_sections() {
                 html_map[path] = res;
                 $(".markdown .content").html(html_map[path]);
                 loading.name = null;
-                Ps.update(container);
+                markdownPS.update();
+                scrollToHash(container);
             });
         }
 
-        container.scrollTop = 0;
         $(".sidebar").removeClass("show");
 
         e.preventDefault();
@@ -92,20 +169,8 @@ function render_code_sections() {
         window.location.href = window.location.href.replace(/#.*/, '') + '#' + $(this).attr("id");
     });
 
-    Ps.initialize($(".markdown")[0], {
-        suppressScrollX: true,
-        useKeyboard: false,
-        wheelSpeed: 0.68,
-    });
-
-    Ps.initialize($(".sidebar")[0], {
-        suppressScrollX: true,
-        useKeyboard: false,
-        wheelSpeed: 0.68,
-    });
-
     window.onresize = function () {
-        Ps.update($(".markdown")[0]);
+        markdownPS.update();
     };
 
     window.addEventListener("popstate", function () {
@@ -124,4 +189,9 @@ function render_code_sections() {
     });
 
     render_code_sections();
+
+    // Finally, make sure if we loaded a window with a hash, we scroll
+    // to the right place.
+    var container = $(".markdown")[0];
+    scrollToHash(container);
 }());

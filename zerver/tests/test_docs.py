@@ -52,10 +52,23 @@ class DocPageTest(ZulipTestCase):
     @slow("Tests dozens of endpoints, including generating lots of emails")
     def test_doc_endpoints(self) -> None:
         self._test('/api/', 'We hear you like APIs')
-        self._test('/api/endpoints/', 'pre-built API bindings for')
         self._test('/api/api-keys', 'you can use its email and API key')
         self._test('/api/installation-instructions', 'No download required!')
-        self._test('/api/usage', 'steal away your hearts')
+        self._test('/api/private-message', 'steal away your hearts')
+        self._test('/api/stream-message', 'rotten in the state of Denmark')
+        self._test('/api/render-message', '**foo**')
+        self._test('/api/get-all-streams', 'include_public')
+        self._test('/api/get-stream-id', 'The name of the stream to retrieve the ID for.')
+        self._test('/api/get-subscribed-streams', 'Get all streams that the user is subscribed to.')
+        self._test('/api/get-all-users', 'client_gravatar')
+        self._test('/api/register-queue', 'apply_markdown')
+        self._test('/api/get-events-from-queue', 'dont_block')
+        self._test('/api/delete-queue', 'Delete a previously registered queue')
+        self._test('/api/update-message', 'propagate_mode')
+        self._test('/api/get-profile', 'takes no arguments')
+        self._test('/api/add-subscriptions', 'authorization_errors_fatal')
+        self._test('/api/create-user', 'zuliprc-admin')
+        self._test('/api/remove-subscriptions', 'not_subscribed')
         self._test('/team/', 'industry veterans')
         self._test('/history/', 'Cambridge, Massachusetts')
         # Test the i18n version of one of these pages.
@@ -88,7 +101,7 @@ class DocPageTest(ZulipTestCase):
     @slow("Tests dozens of endpoints, including all our integrations docs")
     def test_integration_doc_endpoints(self) -> None:
         self._test('/integrations/',
-                   'Over 60 native integrations.',
+                   'native integrations.',
                    extra_strings=[
                        'And hundreds more through',
                        'Hubot',
@@ -99,6 +112,17 @@ class DocPageTest(ZulipTestCase):
         for integration in INTEGRATIONS.keys():
             url = '/integrations/doc-html/{}'.format(integration)
             self._test(url, '')
+
+    def test_email_integration(self) -> None:
+        self._test('/integrations/doc-html/email',
+                   'support+abcdefg@testserver')
+
+        with self.settings(EMAIL_GATEWAY_PATTERN=''):
+            result = self.client_get('integrations/doc-html/email', subdomain='zulip')
+            self.assertNotIn('support+abcdefg@testserver', str(result.content))
+            # if EMAIL_GATEWAY_PATTERN is empty, the main /integrations page should
+            # be rendered instead
+            self._test('/integrations/', 'native integrations.')
 
 
 class IntegrationTest(TestCase):
@@ -206,3 +230,8 @@ class ConfigErrorTest(ZulipTestCase):
         result = self.client_get("/config-error/smtp")
         self.assertEqual(result.status_code, 200)
         self.assert_in_success_response(["email configuration"], result)
+
+    def test_dev_direct_production_error(self) -> None:
+        result = self.client_get("/config-error/dev")
+        self.assertEqual(result.status_code, 200)
+        self.assert_in_success_response(["DevAuthBackend"], result)

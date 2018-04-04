@@ -18,7 +18,10 @@ exports.editability_types = editability_types;
 
 function get_editability(message, edit_limit_seconds_buffer) {
     edit_limit_seconds_buffer = edit_limit_seconds_buffer || 0;
-    if (!(message && message.sent_by_me)) {
+    if (!message) {
+        return editability_types.NO;
+    }
+    if (!(message.sent_by_me || page_params.realm_allow_community_topic_editing)) {
         return editability_types.NO;
     }
     if (message.failed_request) {
@@ -40,14 +43,20 @@ function get_editability(message, edit_limit_seconds_buffer) {
         return editability_types.NO;
     }
 
-    if (page_params.realm_message_content_edit_limit_seconds === 0) {
+    if (page_params.realm_message_content_edit_limit_seconds === 0 && message.sent_by_me) {
         return editability_types.FULL;
     }
 
     var now = new XDate();
-    if (page_params.realm_message_content_edit_limit_seconds + edit_limit_seconds_buffer +
-        now.diffSeconds(message.timestamp * 1000) > 0) {
+    if ((page_params.realm_message_content_edit_limit_seconds + edit_limit_seconds_buffer +
+        now.diffSeconds(message.timestamp * 1000) > 0) && message.sent_by_me) {
         return editability_types.FULL;
+    }
+
+    // TODO: Change hardcoded value (24 hrs) to be realm setting
+    if (!message.sent_by_me && (
+        86400 + edit_limit_seconds_buffer + now.diffSeconds(message.timestamp * 1000) <= 0)) {
+        return editability_types.NO;
     }
     // time's up!
     if (message.type === 'stream') {
@@ -104,7 +113,6 @@ exports.save = function (row, from_topic_edited_only) {
 
     if (new_content !== message.raw_content && !from_topic_edited_only) {
         request.content = new_content;
-        message.is_me_message = new_content.lastIndexOf('/me', 0) === 0;
         changed = true;
     }
     if (!changed) {
@@ -116,9 +124,8 @@ exports.save = function (row, from_topic_edited_only) {
         url: '/json/messages/' + message.id,
         data: request,
         success: function () {
-            if (msg_list === current_msg_list) {
-                row.find(".edit_error").text(i18n.t("Message successfully edited!")).removeClass("alert-error").addClass("alert-success").show();
-            }
+            var spinner = row.find(".topic_edit_spinner");
+            loading.destroy_indicator(spinner);
         },
         error: function (xhr) {
             if (msg_list === current_msg_list) {
@@ -128,6 +135,22 @@ exports.save = function (row, from_topic_edited_only) {
         },
     });
     // The message will automatically get replaced via message_list.update_message.
+};
+
+exports.update_message_topic_editing_pencil = function () {
+    if (page_params.realm_allow_message_editing) {
+        $(".on_hover_topic_edit, .always_visible_topic_edit").show();
+    } else {
+        $(".on_hover_topic_edit, .always_visible_topic_edit").hide();
+    }
+};
+
+exports.show_topic_edit_spinner = function (row) {
+    var spinner = row.find(".topic_edit_spinner");
+    loading.make_indicator(spinner);
+    $(spinner).removeAttr("style");
+    $(".topic_edit_save").hide();
+    $(".topic_edit_cancel").hide();
 };
 
 function handle_edit_keydown(from_topic_edited_only, e) {
@@ -141,6 +164,7 @@ function handle_edit_keydown(from_topic_edited_only, e) {
         row = $(e.target).closest(".message_row");
     } else if (e.target.id === "inline_topic_edit" && code === 13) {
         row = $(e.target).closest(".recipient_row");
+        exports.show_topic_edit_spinner(row);
     } else {
         return;
     }
@@ -196,6 +220,8 @@ function edit_message(row, raw_content) {
     current_msg_list.show_edit_message(row, edit_obj);
 
     form.keydown(_.partial(handle_edit_keydown, false));
+
+    upload.feature_check($('#attach_files_' + rows.id(row)));
 
     var message_edit_content = row.find('textarea.message_edit_content');
     var message_edit_topic = row.find('input.message_edit_topic');
@@ -326,6 +352,13 @@ function start_edit_with_content(row, content, edit_box_open_callback) {
     if (edit_box_open_callback) {
         edit_box_open_callback();
     }
+
+    row.find('#message_edit_form').filedrop(
+        upload.options({
+            mode: 'edit',
+            row: rows.id(row),
+        })
+    );
 }
 
 exports.start = function (row, edit_box_open_callback) {

@@ -3,6 +3,7 @@
         <div class="tip">
             {{#tr this}}Looking for our <a href="/integrations" target="_blank">Integrations</a> or <a href="/api" target="_blank">API</a> documentation?{{/tr}}
         </div>
+        <div class="tip bot-settings-tip"></div>
 
         <div>
             <span>{{t 'Download config of all active outgoing webhook bots in Zulip Botserver format.' }}</span>
@@ -14,7 +15,7 @@
         <ul class="nav nav-tabs nav-justified" id="bots_lists_navbar">
             <li class="active active-bots-tab"><a>{{t "Active bots" }}</a></li>
             <li class="inactive-bots-tab"><a>{{t "Inactive bots" }}</a></li>
-            <li class="add-a-new-bot-tab"><a>{{t "Add a new bot" }}</a></li>
+            <li class="add-a-new-bot-tab {{#unless admin_only_bot_creation}}hide{{/unless}}"><a>{{t "Add a new bot" }}</a></li>
         </ul>
 
         <ol class="bots_list required-text" id="active_bots_list" data-empty="{{t 'You have no active bots.' }}">
@@ -26,12 +27,13 @@
         <div id="bot_table_error" class="alert alert-error hide"></div>
 
         <div id="add-a-new-bot-form">
-            <form id="create_bot_form" class="form-horizontal no-padding">
+            <form id="create_bot_form"
+                class="form-horizontal no-padding {{#unless admin_only_bot_creation}}hide{{/unless}}">
                 <div class="new-bot-form">
                     <div class="input-group">
                         <label for="bot_type">
                             {{t "Bot type" }}
-                            <i class="icon-vector-question-sign bot_type_tooltip" data-toggle="tooltip"
+                            <i class="icon-vector-question-sign settings-info-icon bot_type_tooltip" data-toggle="tooltip"
                              title='{{t "Incoming webhooks can only send messages." }}'></i>
                         </label>
                         <select name="bot_type" id="create_bot_type">
@@ -39,6 +41,14 @@
                                 {{#if this.allowed}}
                                 <option value="{{this.type_id}}">{{this.name}}</option>
                                 {{/if}}
+                            {{/each}}
+                        </select>
+                    </div>
+                    <div class="input-group" id="service_name_list">
+                        <label for="select_service_name">{{t "Bot"}}</label>
+                        <select name="service_name" id="select_service_name">
+                            {{#each page_params.realm_embedded_bots}}
+                            <option value="{{this.name}}">{{this.name}}</option>
                             {{/each}}
                         </select>
                     </div>
@@ -51,7 +61,7 @@
                     <div class="input-group">
                         <label for="bot_short_name">{{t "Username" }}</label>
                         <input type="text" name="bot_short_name" id="create_bot_short_name" class="required bot_local_part"
-                               placeholder="cookie" value="" />
+                               placeholder="{{t 'cookie' }}" value="" />
                         -bot@{{ page_params.realm_bot_domain }}
                         <div>
                             <label for="create_bot_short_name" generated="true" class="text-error"></label>
@@ -59,7 +69,7 @@
                     </div>
                     <div id="payload_url_inputbox">
                         <div class="input-group">
-                            <label for="create_payload_url">{{t "Base URL" }}</label>
+                            <label for="create_payload_url">{{t "Endpoint URL" }}</label>
                             <input type="text" name="payload_url" id="create_payload_url"
                                 maxlength=100 placeholder="https://hostname.example.com/bots/followup" value="" />
                             <div><label for="create_payload_url" generated="true" class="text-error"></label></div>
@@ -73,6 +83,13 @@
                             <div><label for="create_interface_type" generated="true" class="text-error"></label></div>
                         </div>
                     </div>
+                    <div id="config_inputbox">
+                        {{#each page_params.realm_embedded_bots as |bot index|}}
+                            {{#each bot.config as |config_value config_key|}}
+                            {{partial "embedded_bot_config_item" "botname" bot.name "key" config_key "value" config_value}}
+                            {{/each}}
+                        {{/each}}
+                    </div>
                     <div class="input-group">
                         <div id="bot_avatar_file"></div>
                         <input type="file" name="bot_avatar_file_input" class="notvisible" id="bot_avatar_file_input" value="{{t 'Upload avatar' }}" />
@@ -85,6 +102,7 @@
                     <button type="submit" class="button white rounded sea-green" id="create_bot_button">
                         {{t 'Create bot' }}
                     </button>
+                    <div class="create_bot_spinner"></div>
                 </div>
             </form>
         </div>

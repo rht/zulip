@@ -199,12 +199,18 @@ function populate_users(realm_people_data) {
     loading.destroy_indicator($('#admin_page_users_loading_indicator'));
     loading.destroy_indicator($('#admin_page_bots_loading_indicator'));
     loading.destroy_indicator($('#admin_page_deactivated_users_loading_indicator'));
+    $("#admin_deactivated_users_table").show();
+    $("#admin_users_table").show();
+    $("#admin_bots_table").show();
 }
 
 exports.set_up = function () {
-    loading.make_indicator($('#admin_page_users_loading_indicator'));
-    loading.make_indicator($('#admin_page_bots_loading_indicator'));
-    loading.make_indicator($('#admin_page_deactivated_users_loading_indicator'));
+    loading.make_indicator($('#admin_page_users_loading_indicator'), {text: 'Loading...'});
+    loading.make_indicator($('#admin_page_bots_loading_indicator'), {text: 'Loading...'});
+    loading.make_indicator($('#admin_page_deactivated_users_loading_indicator'), {text: 'Loading...'});
+    $("#admin_deactivated_users_table").hide();
+    $("#admin_users_table").hide();
+    $("#admin_bots_table").hide();
 
     // Populate users and bots tables
     channel.get({
@@ -251,13 +257,10 @@ exports.on_load_success = function (realm_people_data) {
         channel.del({
             url: '/json/users/' + encodeURIComponent(email),
             error: function (xhr) {
-                if (xhr.status.toString().charAt(0) === "4") {
-                    meta.current_deactivate_user_modal_row.find("button").closest("td").html(
-                        $("<p>").addClass("text-error").text(JSON.parse(xhr.responseText).msg)
-                    );
-                } else {
-                    meta.current_deactivate_user_modal_row.find("button").text(i18n.t("Failed!"));
-                }
+                var status = $("#organization-status").expectOne();
+                ui_report.error(i18n.t("Failed"), xhr, status);
+                var button = meta.current_deactivate_user_modal_row.find("button.deactivate");
+                button.text(i18n.t("Deactivate"));
             },
             success: function () {
                 var button = meta.current_deactivate_user_modal_row.find("button.deactivate");
@@ -282,13 +285,7 @@ exports.on_load_success = function (realm_people_data) {
         channel.del({
             url: '/json/bots/' + encodeURIComponent(email),
             error: function (xhr) {
-                if (xhr.status.toString().charAt(0) === "4") {
-                    row.find("button").closest("td").html(
-                        $("<p>").addClass("text-error").text(JSON.parse(xhr.responseText).msg)
-                    );
-                } else {
-                    row.find("button").text(i18n.t("Failed!"));
-                }
+                ui_report.generic_row_button_error(xhr, $(e.target));
             },
             success: function () {
                 update_view_on_deactivate(row);
@@ -307,14 +304,7 @@ exports.on_load_success = function (realm_people_data) {
         channel.post({
             url: '/json/users/' + encodeURIComponent(email) + "/reactivate",
             error: function (xhr) {
-                var button = row.find("button");
-                if (xhr.status.toString().charAt(0) === "4") {
-                    button.closest("td").html(
-                        $("<p>").addClass("text-error").text(JSON.parse(xhr.responseText).msg)
-                    );
-                } else {
-                     button.text(i18n.t("Failed!"));
-                }
+                ui_report.generic_row_button_error(xhr, $(e.target));
             },
             success: function () {
                 update_view_on_reactivate(row);
@@ -347,7 +337,7 @@ exports.on_load_success = function (realm_people_data) {
                 button.text(i18n.t("Remove admin"));
             },
             error: function (xhr) {
-                var status = row.find(".admin-user-status");
+                var status = $("#organization-status").expectOne();
                 ui_report.error(i18n.t("Failed"), xhr, status);
             },
         });
@@ -378,7 +368,7 @@ exports.on_load_success = function (realm_people_data) {
                 button.text(i18n.t("Make admin"));
             },
             error: function (xhr) {
-                var status = row.find(".admin-user-status");
+                var status = $("#organization-status").expectOne();
                 ui_report.error(i18n.t("Failed"), xhr, status);
             },
         });
@@ -398,16 +388,19 @@ exports.on_load_success = function (realm_people_data) {
         var owner_select = $(templates.render("bot_owner_select", {users_list: users_list}));
         var admin_status = $('#organization-status').expectOne();
         var person = people.get_person_from_user_id(user_id);
+        var url;
+        var data;
         if (!person) {
             return;
         } else if (person.is_bot) {
             // Dynamically add the owner select control in order to
             // avoid performance issues in case of large number of users.
-            owner_select.val(bot_data.get(person.email).owner || "");
+            owner_select.val(bot_data.get(user_id).owner || "");
             form_row.find(".edit_bot_owner_container").append(owner_select);
         }
 
-        // Show user form.
+        // Show user form and set the full name value in input field.
+        full_name.val(person.full_name);
         user_row.hide();
         form_row.show();
 
@@ -421,13 +414,19 @@ exports.on_load_success = function (realm_people_data) {
             e.preventDefault();
             e.stopPropagation();
 
-            var url = "/json/bots/" + encodeURIComponent(person.email);
-            var data = {
-                full_name: full_name.val(),
-            };
-
-            if (owner_select.val() !== undefined && owner_select.val() !== "") {
-                data.bot_owner = owner_select.val();
+            if (person.is_bot) {
+                url = "/json/bots/" + encodeURIComponent(person.email);
+                data = {
+                    full_name: full_name.val(),
+                };
+                if (owner_select.val() !== undefined && owner_select.val() !== "") {
+                    data.bot_owner = owner_select.val();
+                }
+            } else {
+                url = "/json/users/" + encodeURIComponent(person.email);
+                data = {
+                    full_name: JSON.stringify(full_name.val()),
+                };
             }
 
             channel.patch({
@@ -436,8 +435,8 @@ exports.on_load_success = function (realm_people_data) {
                 success: function () {
                     ui_report.success(i18n.t('Updated successfully!'), admin_status);
                 },
-                error: function () {
-                    ui_report.error(i18n.t('Failed'), admin_status);
+                error: function (xhr) {
+                    ui_report.error(i18n.t('Failed'), xhr, admin_status);
                 },
             });
         });

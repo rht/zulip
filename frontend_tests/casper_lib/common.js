@@ -92,6 +92,11 @@ exports.initialize_casper = function () {
     casper.evaluate(function () {
         window.localStorage.clear();
     });
+
+    // This captures console messages from the app.
+    casper.on('remote.message', function (msg) {
+        casper.echo("app console: " + msg);
+    });
 };
 
 exports.then_log_in = function (credentials) {
@@ -106,6 +111,14 @@ exports.start_and_log_in = function (credentials, viewport) {
     casper.start(log_in_url, function () {
         exports.initialize_casper(viewport);
         log_in(credentials);
+    });
+};
+
+exports.then_click = function (selector) {
+    casper.then(function () {
+        casper.waitUntilVisible(selector, function () {
+            casper.click(selector);
+        });
     });
 };
 
@@ -160,15 +173,6 @@ exports.select_item_via_typeahead = function (field_selector, str, item) {
     });
 };
 
-exports.enable_page_console = function () {
-    // Call this (after casper.start) to enable printing page-context
-    // console.log (plus some CasperJS-specific messages) to the
-    // terminal.
-    casper.on('remote.message', function (msg) {
-        casper.echo(msg);
-    });
-};
-
 exports.check_form = function (form_selector, expected, test_name) {
     var values = casper.getFormValues(form_selector);
     var k;
@@ -201,6 +205,22 @@ exports.turn_off_press_enter_to_send = function () {
     }
 };
 
+exports.pm_recipient = {
+    set: function (recip) {
+        casper.evaluate(function (recipient) {
+            $("#private_message_recipient").text(recipient)
+                .trigger({ type: "keydown", keyCode: 13 });
+        }, { recipient: recip });
+    },
+
+    expect: function (expected_value) {
+        var displayed_recipients = casper.evaluate(function () {
+            return compose_state.recipient();
+        });
+        casper.test.assertEquals(displayed_recipients, expected_value);
+    },
+};
+
 // Wait for any previous send to finish, then send a message.
 exports.then_send_message = function (type, params) {
     casper.then(function () {
@@ -212,10 +232,14 @@ exports.then_send_message = function (type, params) {
         if (type === "stream") {
             casper.page.sendEvent('keypress', "c");
         } else if (type === "private") {
-            casper.page.sendEvent('keypress', "C");
+            casper.page.sendEvent('keypress', "x");
         } else {
             casper.test.assertTrue(false, "send_message got valid message type");
         }
+
+        exports.pm_recipient.set(params.recipient);
+        delete params.recipient;
+
         casper.fill('form[action^="/json/messages"]', params);
 
         exports.turn_off_press_enter_to_send();
@@ -230,6 +254,9 @@ exports.then_send_message = function (type, params) {
             return casper.getFormValues('form[action^="/json/messages"]').content === '';
         });
         exports.wait_for_message_actually_sent();
+        casper.evaluate(function () {
+            compose_actions.cancel();
+        });
     });
 
     casper.then(function () {

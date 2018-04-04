@@ -4,7 +4,10 @@ var bot_data = (function () {
     var bots = {};
     var bot_fields = ['api_key', 'avatar_url', 'default_all_public_streams',
                       'default_events_register_stream', 'default_sending_stream',
-                      'email', 'full_name', 'is_active', 'owner', 'bot_type'];
+                      'email', 'full_name', 'is_active', 'owner', 'bot_type', 'user_id'];
+    var services = {};
+    var services_fields = ['base_url', 'interface',
+                           'config_data', 'service_name'];
 
     var send_change_event = _.debounce(function () {
         $(document).trigger('zulip.bot_data_changed');
@@ -22,20 +25,37 @@ var bot_data = (function () {
 
     exports.add = function bot_data__add(bot) {
         var clean_bot = _.pick(bot, bot_fields);
-        bots[bot.email] = clean_bot;
+        bots[bot.user_id] = clean_bot;
         set_can_admin(clean_bot);
+        var clean_services = _.map(bot.services, function (service) {
+            return _.pick(service, services_fields);
+        });
+        services[bot.user_id] = clean_services;
+
         send_change_event();
     };
 
-    exports.deactivate = function bot_data__deactivate(email) {
-        bots[email].is_active = false;
+    exports.deactivate = function bot_data__deactivate(bot_id) {
+        bots[bot_id].is_active = false;
         send_change_event();
     };
 
-    exports.update = function bot_data__update(email, bot_update) {
-        var bot = bots[email];
+    exports.delete = function bot_data__delete(bot_id) {
+        delete bots[bot_id];
+        delete services[bot_id];
+        send_change_event();
+    };
+
+    exports.update = function bot_data__update(bot_id, bot_update) {
+        var bot = bots[bot_id];
         _.extend(bot, _.pick(bot_update, bot_fields));
         set_can_admin(bot);
+
+        // We currently only support one service per bot.
+        var service = services[bot_id][0];
+        if (typeof bot_update.services !== 'undefined' && bot_update.services.length > 0) {
+            _.extend(service, _.pick(bot_update.services[0], services_fields));
+        }
         send_change_event();
     };
 
@@ -51,14 +71,19 @@ var bot_data = (function () {
         });
     };
 
-    exports.get = function bot_data__get(email) {
-        return bots[email];
+    exports.get = function bot_data__get(bot_id) {
+        return bots[bot_id];
+    };
+
+    exports.get_services = function bot_data__get_services(bot_id) {
+        return services[bot_id];
     };
 
     exports.initialize = function () {
         _.each(page_params.realm_bots, function (bot) {
             exports.add(bot);
         });
+        delete page_params.realm_bots;
     };
 
     return exports;

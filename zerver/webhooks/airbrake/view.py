@@ -5,7 +5,7 @@ from django.http import HttpRequest, HttpResponse
 from django.utils.translation import ugettext as _
 
 from zerver.decorator import api_key_only_webhook_view
-from zerver.lib.actions import check_send_stream_message
+from zerver.lib.webhooks.common import check_send_webhook_message
 from zerver.lib.request import REQ, has_request_variables
 from zerver.lib.response import json_error, json_success
 from zerver.models import UserProfile
@@ -15,14 +15,11 @@ AIRBRAKE_MESSAGE_TEMPLATE = '[{error_class}]({error_url}): "{error_message}" occ
 
 @api_key_only_webhook_view('Airbrake')
 @has_request_variables
-def api_airbrake_webhook(request, user_profile,
-                         payload=REQ(argument_type='body'),
-                         stream=REQ(default='airbrake')):
-    # type: (HttpRequest, UserProfile, Dict[str, Any], Text) -> HttpResponse
+def api_airbrake_webhook(request: HttpRequest, user_profile: UserProfile,
+                         payload: Dict[str, Any]=REQ(argument_type='body')) -> HttpResponse:
     subject = get_subject(payload)
     body = get_body(payload)
-    check_send_stream_message(user_profile, request.client,
-                              stream, subject, body)
+    check_send_webhook_message(request, user_profile, subject, body)
     return json_success()
 
 def get_subject(payload: Dict[str, Any]) -> str:

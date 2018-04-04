@@ -105,7 +105,7 @@ class TemplateTestCase(ZulipTestCase):
             'zilencer/enterprise_tos_accept_body.txt',
             'zerver/zulipchat_migration_tos.html',
             'zilencer/enterprise_tos_accept_body.txt',
-            'zerver/closed_realm.html',
+            'zerver/invalid_email.html',
             'zerver/topic_is_muted.html',
             'zerver/bankruptcy.html',
             'zerver/lightbox_overlay.html',
@@ -116,6 +116,7 @@ class TemplateTestCase(ZulipTestCase):
             'zerver/api_content.json',
             'zerver/handlebars_compilation_failed.html',
             'zerver/portico-header.html',
+            'zerver/deprecation_notice.html',
         ]
 
         integrations_regexp = re.compile('zerver/integrations/.*.html')

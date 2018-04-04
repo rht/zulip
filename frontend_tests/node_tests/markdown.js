@@ -12,6 +12,7 @@ zrequire('people');
 zrequire('user_groups');
 zrequire('emoji_codes', 'generated/emoji/emoji_codes');
 zrequire('emoji');
+zrequire('message_store');
 zrequire('markdown');
 
 set_global('window', {
@@ -23,8 +24,11 @@ set_global('window', {
 set_global('page_params', {
     realm_users: [],
     realm_emoji: {
-        burrito: {display_url: '/static/generated/emoji/images/emoji/burrito.png',
-                  source_url: '/static/generated/emoji/images/emoji/burrito.png'},
+        1: {id: 1,
+            name: 'burrito',
+            source_url: '/static/generated/emoji/images/emoji/burrito.png',
+            deactivated: false,
+        },
     },
     realm_filters: [
         [
@@ -40,6 +44,7 @@ set_global('page_params', {
             "https://zone_%(zone)s.zulip.net/ticket/%(id)s",
         ],
     ],
+    translate_emoticons: false,
 });
 
 set_global('blueslip', {error: function () {}});
@@ -175,17 +180,24 @@ var bugdown_data = JSON.parse(fs.readFileSync(path.join(__dirname, '../../zerver
     var tests = bugdown_data.regular_tests;
 
     tests.forEach(function (test) {
+
+        // Ignore tests if specified
+        if (test.ignore === true) {
+            return;
+        }
+
         var message = {raw_content: test.input};
+        page_params.translate_emoticons = test.translate_emoticons || false;
         markdown.apply_markdown(message);
         var output = message.content;
-
+        var error_message = `Failure in test: ${test.name}`;
         if (test.marked_expected_output) {
-            global.bugdown_assert.notEqual(test.expected_output, output);
-            global.bugdown_assert.equal(test.marked_expected_output, output);
+            global.bugdown_assert.notEqual(test.expected_output, output, error_message);
+            global.bugdown_assert.equal(test.marked_expected_output, output, error_message);
         } else if (test.backend_only_rendering) {
             assert.equal(markdown.contains_backend_only_syntax(test.input), true);
         } else {
-            global.bugdown_assert.equal(test.expected_output, output);
+            global.bugdown_assert.equal(test.expected_output, output, error_message);
         }
     });
 }());
@@ -193,15 +205,18 @@ var bugdown_data = JSON.parse(fs.readFileSync(path.join(__dirname, '../../zerver
 (function test_message_flags() {
     var message = {raw_content: '@**Leo**'};
     markdown.apply_markdown(message);
-    assert(!_.contains(message.flags, 'mentioned'));
+    assert(!message.mentioned);
+    assert(!message.mentioned_me_directly);
 
     message = {raw_content: '@**Cordelia Lear**'};
     markdown.apply_markdown(message);
-    assert(_.contains(message.flags, 'mentioned'));
+    assert(message.mentioned);
+    assert(message.mentioned_me_directly);
 
     message = {raw_content: '@**all**'};
     markdown.apply_markdown(message);
-    assert(_.contains(message.flags, 'mentioned'));
+    assert(message.mentioned);
+    assert(!message.mentioned_me_directly);
 }());
 
 (function test_marked() {
@@ -209,6 +224,7 @@ var bugdown_data = JSON.parse(fs.readFileSync(path.join(__dirname, '../../zerver
         {input: 'hello', expected: '<p>hello</p>'},
         {input: 'hello there', expected: '<p>hello there</p>'},
         {input: 'hello **bold** for you', expected: '<p>hello <strong>bold</strong> for you</p>'},
+        {input: 'hello ***foo*** for you', expected: '<p>hello <strong><em>foo</em></strong> for you</p>'},
         {input: '__hello__', expected: '<p>__hello__</p>'},
         {input: '\n```\nfenced code\n```\n\nand then after\n',
          expected: '<div class="codehilite"><pre><span></span>fenced code\n</pre></div>\n\n\n<p>and then after</p>'},
@@ -237,9 +253,9 @@ var bugdown_data = JSON.parse(fs.readFileSync(path.join(__dirname, '../../zerver
         {input: 'These #* #*** are also not mentions',
          expected: '<p>These #* #*** are also not mentions</p>'},
         {input: 'This is a #**Denmark** stream link',
-         expected: '<p>This is a <a class="stream" data-stream-id="1" href="http://zulip.zulipdev.com/#narrow/stream/Denmark">#Denmark</a> stream link</p>'},
+         expected: '<p>This is a <a class="stream" data-stream-id="1" href="http://zulip.zulipdev.com/#narrow/stream/1-Denmark">#Denmark</a> stream link</p>'},
         {input: 'This is #**Denmark** and #**social** stream links',
-         expected: '<p>This is <a class="stream" data-stream-id="1" href="http://zulip.zulipdev.com/#narrow/stream/Denmark">#Denmark</a> and <a class="stream" data-stream-id="2" href="http://zulip.zulipdev.com/#narrow/stream/social">#social</a> stream links</p>'},
+         expected: '<p>This is <a class="stream" data-stream-id="1" href="http://zulip.zulipdev.com/#narrow/stream/1-Denmark">#Denmark</a> and <a class="stream" data-stream-id="2" href="http://zulip.zulipdev.com/#narrow/stream/2-social">#social</a> stream links</p>'},
         {input: 'And this is a #**wrong** stream link',
          expected: '<p>And this is a #**wrong** stream link</p>'},
         {input: 'mmm...:burrito:s',
@@ -268,7 +284,7 @@ var bugdown_data = JSON.parse(fs.readFileSync(path.join(__dirname, '../../zerver
         {input: 'Test *italic*',
          expected: '<p>Test <em>italic</em></p>'},
         {input: 'T\n#**Denmark**',
-         expected: '<p>T<br>\n<a class="stream" data-stream-id="1" href="http://zulip.zulipdev.com/#narrow/stream/Denmark">#Denmark</a></p>'},
+         expected: '<p>T<br>\n<a class="stream" data-stream-id="1" href="http://zulip.zulipdev.com/#narrow/stream/1-Denmark">#Denmark</a></p>'},
         {input: 'T\n@**Cordelia Lear**',
           expected: '<p>T<br>\n<span class="user-mention" data-user-id="101">@Cordelia Lear</span></p>'},
         {input: 'T\n@hamletcharacters',
@@ -283,6 +299,12 @@ var bugdown_data = JSON.parse(fs.readFileSync(path.join(__dirname, '../../zerver
          expected: '<p>@*notagroup*</p>'},
         {input: 'This is a realm filter `hello` with text after it',
          expected: '<p>This is a realm filter <code>hello</code> with text after it</p>'},
+        // Test the emoticon conversion
+        {input: ':)',
+         expected: '<p>:)</p>'},
+        {input: ':)',
+         expected: '<p><span class="emoji emoji-1f603" title="smiley">:smiley:</span></p>',
+         translate_emoticons: true},
     ];
 
     // We remove one of the unicode emoji we put as input in one of the test
@@ -291,6 +313,9 @@ var bugdown_data = JSON.parse(fs.readFileSync(path.join(__dirname, '../../zerver
     delete emoji_codes.codepoint_to_name['1f6b2'];
 
     test_cases.forEach(function (test_case) {
+        // Disable emoji conversion by default.
+        page_params.translate_emoticons = test_case.translate_emoticons || false;
+
         var input = test_case.input;
         var expected = test_case.expected;
 
@@ -342,44 +367,59 @@ var bugdown_data = JSON.parse(fs.readFileSync(path.join(__dirname, '../../zerver
 (function test_message_flags() {
     var input = "/me is testing this";
     var message = {subject: "No links here", raw_content: input};
-    message.flags = ['read'];
     markdown.apply_markdown(message);
 
     assert.equal(message.is_me_message, true);
-    assert.equal(message.flags.length, 1);
-    assert(message.flags.indexOf('read') !== -1);
+    assert(!message.unread);
+
+    input = "/me is testing\nthis";
+    message = {subject: "No links here", raw_content: input};
+    markdown.apply_markdown(message);
+
+    assert.equal(message.is_me_message, false);
 
     input = "testing this @**all** @**Cordelia Lear**";
     message = {subject: "No links here", raw_content: input};
     markdown.apply_markdown(message);
 
     assert.equal(message.is_me_message, false);
-    assert.equal(message.flags.length, 1);
-    assert(message.flags.indexOf('mentioned') !== -1);
+    assert.equal(message.mentioned, true);
+    assert.equal(message.mentioned_me_directly, true);
 
     input = "test @all";
     message = {subject: "No links here", raw_content: input};
     markdown.apply_markdown(message);
-    assert.equal(message.flags.length, 1);
-    assert(message.flags.indexOf('mentioned') !== -1);
+    assert.equal(message.mentioned, false);
+
+    input = "test @everyone";
+    message = {subject: "No links here", raw_content: input};
+    markdown.apply_markdown(message);
+    assert.equal(message.mentioned, false);
 
     input = "test @any";
     message = {subject: "No links here", raw_content: input};
     markdown.apply_markdown(message);
-    assert.equal(message.flags.length, 0);
-    assert(message.flags.indexOf('mentioned') === -1);
+    assert.equal(message.mentioned, false);
+
+    input = "test @alleycat.com";
+    message = {subject: "No links here", raw_content: input};
+    markdown.apply_markdown(message);
+    assert.equal(message.mentioned, false);
 
     input = "test @*hamletcharacters*";
     message = {subject: "No links here", raw_content: input};
     markdown.apply_markdown(message);
-    assert.equal(message.flags.length, 1);
-    assert(message.flags.indexOf('mentioned') !== -1);
+    assert.equal(message.mentioned, true);
 
     input = "test @*backend*";
     message = {subject: "No links here", raw_content: input};
     markdown.apply_markdown(message);
-    assert.equal(message.flags.length, 0);
-    assert(message.flags.indexOf('mentioned') === -1);
+    assert.equal(message.mentioned, false);
+
+    input = "test @**invalid_user**";
+    message = {subject: "No links here", raw_content: input};
+    markdown.apply_markdown(message);
+    assert.equal(message.mentioned, false);
 }());
 
 (function test_backend_only_realm_filters() {

@@ -11,6 +11,8 @@ exports.MessageList = function (table_name, filter, opts) {
     }, opts);
     this.view = new MessageListView(this, table_name, this.collapse_messages);
 
+    this.fetch_status = FetchStatus();
+
     if (this.muting_enabled) {
         this._all_items = [];
     }
@@ -98,7 +100,7 @@ exports.MessageList.prototype = {
     get: function MessageList_get(id) {
         id = parseFloat(id);
         if (isNaN(id)) {
-            return undefined;
+            return;
         }
         return this._hash[id];
     },
@@ -613,7 +615,9 @@ exports.MessageList.prototype = {
                 item.sender_full_name = full_name;
             }
         });
-        this.view.rerender_the_whole_thing();
+        if (this.table_name !== undefined) {
+            this.view.rerender_preserving_scrolltop();
+        }
     },
 
     update_user_avatar: function (user_id, avatar_url) {
@@ -626,7 +630,9 @@ exports.MessageList.prototype = {
                 item.small_avatar_url = avatar_url;
             }
         });
-        this.view.rerender_the_whole_thing();
+        if (this.table_name !== undefined) {
+            this.view.rerender_preserving_scrolltop();
+        }
     },
 
     update_stream_name: function MessageList_update_stream_name(stream_id,
@@ -637,7 +643,9 @@ exports.MessageList.prototype = {
                 item.stream = new_stream_name;
             }
         });
-        this.view.rerender_the_whole_thing();
+        if (this.table_name !== undefined) {
+            this.view.rerender_preserving_scrolltop();
+        }
     },
 
     change_message_id: function MessageList_change_message_id(old_id, new_id) {

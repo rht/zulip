@@ -2,6 +2,9 @@
 from typing import Any, Dict, Optional, List, Text
 from django.http import HttpRequest, HttpResponse
 from django.utils.translation import ugettext as _
+from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.views.decorators.http import require_GET
 
 from zerver.decorator import require_realm_admin, to_non_negative_int, to_not_negative_int_or_none
 from zerver.lib.actions import (
@@ -10,6 +13,7 @@ from zerver.lib.actions import (
     do_set_realm_notifications_stream,
     do_set_realm_signup_notifications_stream,
     do_set_realm_property,
+    do_deactivate_realm,
 )
 from zerver.lib.i18n import get_available_language_codes
 from zerver.lib.request import has_request_variables, REQ, JsonableError
@@ -17,7 +21,7 @@ from zerver.lib.response import json_success, json_error
 from zerver.lib.validator import check_string, check_dict, check_bool, check_int
 from zerver.lib.streams import access_stream_by_id
 from zerver.models import Realm, UserProfile
-
+from zerver.forms import check_subdomain_available as check_subdomain
 
 @require_realm_admin
 @has_request_variables
@@ -26,6 +30,7 @@ def update_realm(
         name: Optional[str]=REQ(validator=check_string, default=None),
         description: Optional[str]=REQ(validator=check_string, default=None),
         restricted_to_domain: Optional[bool]=REQ(validator=check_bool, default=None),
+        disallow_disposable_email_addresses: Optional[bool]=REQ(validator=check_bool, default=None),
         invite_required: Optional[bool]=REQ(validator=check_bool, default=None),
         invite_by_admins_only: Optional[bool]=REQ(validator=check_bool, default=None),
         name_changes_disabled: Optional[bool]=REQ(validator=check_bool, default=None),
@@ -36,6 +41,7 @@ def update_realm(
         add_emoji_by_admins_only: Optional[bool]=REQ(validator=check_bool, default=None),
         allow_message_deleting: Optional[bool]=REQ(validator=check_bool, default=None),
         allow_message_editing: Optional[bool]=REQ(validator=check_bool, default=None),
+        allow_community_topic_editing: Optional[bool]=REQ(validator=check_bool, default=None),
         mandatory_topics: Optional[bool]=REQ(validator=check_bool, default=None),
         message_content_edit_limit_seconds: Optional[int]=REQ(converter=to_non_negative_int, default=None),
         allow_edit_history: Optional[bool]=REQ(validator=check_bool, default=None),
@@ -44,7 +50,10 @@ def update_realm(
         authentication_methods: Optional[Dict[Any, Any]]=REQ(validator=check_dict([]), default=None),
         notifications_stream_id: Optional[int]=REQ(validator=check_int, default=None),
         signup_notifications_stream_id: Optional[int]=REQ(validator=check_int, default=None),
-        message_retention_days: Optional[int]=REQ(converter=to_not_negative_int_or_none, default=None)
+        message_retention_days: Optional[int]=REQ(converter=to_not_negative_int_or_none, default=None),
+        send_welcome_emails: Optional[bool]=REQ(validator=check_bool, default=None),
+        bot_creation_policy: Optional[int]=REQ(converter=to_not_negative_int_or_none, default=None),
+        default_twenty_four_hour_time: Optional[bool]=REQ(validator=check_bool, default=None),
 ) -> HttpResponse:
     realm = user_profile.realm
 
@@ -53,12 +62,15 @@ def update_realm(
     if default_language is not None and default_language not in get_available_language_codes():
         raise JsonableError(_("Invalid language '%s'" % (default_language,)))
     if description is not None and len(description) > 1000:
-        return json_error(_("Realm description is too long."))
+        return json_error(_("Organization description is too long."))
     if name is not None and len(name) > Realm.MAX_REALM_NAME_LENGTH:
-        return json_error(_("Realm name is too long."))
+        return json_error(_("Organization name is too long."))
     if authentication_methods is not None and True not in list(authentication_methods.values()):
         return json_error(_("At least one authentication method must be enabled."))
 
+    # Additional validation of permissions values to add new bot
+    if bot_creation_policy is not None and bot_creation_policy not in Realm.BOT_CREATION_POLICY_TYPES:
+        return json_error(_("Invalid bot creation policy"))
     # The user of `locals()` here is a bit of a code smell, but it's
     # restricted to the elements present in realm.property_types.
     #
@@ -85,17 +97,23 @@ def update_realm(
         data['authentication_methods'] = authentication_methods
     # The message_editing settings are coupled to each other, and thus don't fit
     # into the do_set_realm_property framework.
-    if (allow_message_editing is not None and realm.allow_message_editing != allow_message_editing) or \
-       (message_content_edit_limit_seconds is not None and
-            realm.message_content_edit_limit_seconds != message_content_edit_limit_seconds):
+    if ((allow_message_editing is not None and realm.allow_message_editing != allow_message_editing) or
+        (message_content_edit_limit_seconds is not None and
+            realm.message_content_edit_limit_seconds != message_content_edit_limit_seconds) or
+        (allow_community_topic_editing is not None and
+            realm.allow_community_topic_editing != allow_community_topic_editing)):
         if allow_message_editing is None:
             allow_message_editing = realm.allow_message_editing
         if message_content_edit_limit_seconds is None:
             message_content_edit_limit_seconds = realm.message_content_edit_limit_seconds
+        if allow_community_topic_editing is None:
+            allow_community_topic_editing = realm.allow_community_topic_editing
         do_set_realm_message_editing(realm, allow_message_editing,
-                                     message_content_edit_limit_seconds)
+                                     message_content_edit_limit_seconds,
+                                     allow_community_topic_editing)
         data['allow_message_editing'] = allow_message_editing
         data['message_content_edit_limit_seconds'] = message_content_edit_limit_seconds
+        data['allow_community_topic_editing'] = allow_community_topic_editing
     # Realm.notifications_stream and Realm.signup_notifications_stream are not boolean,
     # Text or integer field, and thus doesn't fit into the do_set_realm_property framework.
     if notifications_stream_id is not None:
@@ -121,3 +139,18 @@ def update_realm(
             data['signup_notifications_stream_id'] = signup_notifications_stream_id
 
     return json_success(data)
+
+@require_realm_admin
+@has_request_variables
+def deactivate_realm(request: HttpRequest, user_profile: UserProfile) -> HttpResponse:
+    realm = user_profile.realm
+    do_deactivate_realm(realm)
+    return json_success()
+
+@require_GET
+def check_subdomain_available(request: HttpRequest, subdomain: Text) -> HttpResponse:
+    try:
+        check_subdomain(subdomain)
+        return json_success({"msg": "available"})
+    except ValidationError as e:
+        return json_success({"msg": e.message})

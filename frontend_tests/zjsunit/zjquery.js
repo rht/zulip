@@ -26,7 +26,10 @@ exports.make_zjquery = function () {
                 on_functions.set(event_name, arg);
             } else {
                 var handler = on_functions.get(event_name);
-                assert(handler);
+                if (!handler) {
+                    var error = 'Cannot find ' + event_name + ' handler for ' + selector;
+                    throw Error(error);
+                }
                 handler(arg);
             }
         }
@@ -123,6 +126,12 @@ exports.make_zjquery = function () {
                 }
                 return html;
             },
+            is: function (arg) {
+                if (arg === ':visible') {
+                    return shown;
+                }
+                return self;
+            },
             is_focused: function () {
                 // is_focused is not a jQuery thing; this is
                 // for our testing
@@ -134,6 +143,21 @@ exports.make_zjquery = function () {
             },
             keyup: function (arg) {
                 generic_event('keyup', arg);
+                return self;
+            },
+            off: function () {
+                var event_name;
+
+                if (arguments.length === 2) {
+                    event_name = arguments[0];
+                    on_functions[event_name] = [];
+                } else if (arguments.length === 3) {
+                    event_name = arguments[0];
+                    var sel = arguments[1];
+                    var child_on = child_on_functions.setdefault(sel, new Dict());
+                    child_on[event_name] = [];
+                }
+
                 return self;
             },
             on: function () {
@@ -223,8 +247,8 @@ exports.make_zjquery = function () {
                 return text;
             },
             trigger: function (ev) {
-                var funcs = on_functions.get(ev.name) || [];
-
+                var ev_name = typeof ev === 'string' ? ev : ev.name;
+                var funcs = on_functions.get(ev_name) || [];
                 // The following assertion is temporary.  It can be
                 // legitimate for code to trigger multiple handlers.
                 // But up until now, we haven't needed this, and if
@@ -290,7 +314,8 @@ exports.make_zjquery = function () {
             (selector === 'html') ||
             (selector.location) ||
             (selector.indexOf('#') >= 0) ||
-            (selector.indexOf('.') >= 0);
+            (selector.indexOf('.') >= 0) ||
+            (selector.indexOf('[') >= 0 && selector.indexOf(']') >= selector.indexOf('['));
 
         assert(valid_selector,
                'Invalid selector: ' + selector +

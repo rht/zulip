@@ -1,6 +1,7 @@
 
 import datetime
 import os
+import re
 import ujson
 
 from django.http import HttpResponse
@@ -44,13 +45,13 @@ class HomeTest(ZulipTestCase):
         expected_keys = [
             "alert_words",
             "attachments",
-            "autoscroll_forever",
             "avatar_source",
             "avatar_url",
             "avatar_url_medium",
             "bot_types",
             "can_create_streams",
             "cross_realm_bots",
+            "custom_profile_field_types",
             "custom_profile_fields",
             "debug_mode",
             "default_desktop_notifications",
@@ -58,7 +59,6 @@ class HomeTest(ZulipTestCase):
             "default_language_name",
             "development_environment",
             "email",
-            "emoji_alt_code",
             "emojiset",
             "emojiset_choices",
             "enable_desktop_notifications",
@@ -81,6 +81,7 @@ class HomeTest(ZulipTestCase):
             "hotspots",
             "initial_servertime",
             "is_admin",
+            "jitsi_server_url",
             "language_list",
             "language_list_dbl_col",
             "last_event_id",
@@ -90,6 +91,7 @@ class HomeTest(ZulipTestCase):
             "max_icon_file_size",
             "max_message_id",
             "maxfilesize",
+            "message_content_in_email_notifications",
             "muted_topics",
             "narrow",
             "narrow_stream",
@@ -105,17 +107,21 @@ class HomeTest(ZulipTestCase):
             "prompt_for_invites",
             "queue_id",
             "realm_add_emoji_by_admins_only",
+            "realm_allow_community_topic_editing",
             "realm_allow_edit_history",
             "realm_allow_message_deleting",
             "realm_allow_message_editing",
             "realm_authentication_methods",
+            "realm_bot_creation_policy",
             "realm_bot_domain",
             "realm_bots",
             "realm_create_stream_by_admins_only",
             "realm_default_language",
             "realm_default_stream_groups",
             "realm_default_streams",
+            "realm_default_twenty_four_hour_time",
             "realm_description",
+            "realm_disallow_disposable_email_addresses",
             "realm_domains",
             "realm_email_auth_enabled",
             "realm_email_changes_disabled",
@@ -134,11 +140,13 @@ class HomeTest(ZulipTestCase):
             "realm_message_retention_days",
             "realm_name",
             "realm_name_changes_disabled",
+            "realm_name_in_notifications",
             "realm_non_active_users",
             "realm_notifications_stream_id",
             "realm_password_auth_enabled",
             "realm_presence_disabled",
             "realm_restricted_to_domain",
+            "realm_send_welcome_emails",
             "realm_show_digest_email",
             "realm_signup_notifications_stream_id",
             "realm_uri",
@@ -153,13 +161,13 @@ class HomeTest(ZulipTestCase):
             "subscriptions",
             "test_suite",
             "timezone",
-            "total_uploads_size",
+            "translate_emoticons",
             "twenty_four_hour_time",
             "unread_msgs",
             "unsubscribed",
-            "upload_quota",
             "use_websockets",
             "user_id",
+            "warn_no_email",
             "zulip_version",
         ]
 
@@ -184,7 +192,7 @@ class HomeTest(ZulipTestCase):
             with patch('zerver.lib.cache.cache_set') as cache_mock:
                 result = self._get_home_page(stream='Denmark')
 
-        self.assert_length(queries, 41)
+        self.assert_length(queries, 43)
         self.assert_length(cache_mock.call_args_list, 7)
 
         html = result.content.decode('utf-8')
@@ -212,11 +220,23 @@ class HomeTest(ZulipTestCase):
             'full_name',
             'is_active',
             'owner',
+            'services',
             'user_id',
         ]
 
         realm_bots_actual_keys = sorted([str(key) for key in page_params['realm_bots'][0].keys()])
         self.assertEqual(realm_bots_actual_keys, realm_bots_expected_keys)
+
+    def test_num_queries_for_realm_admin(self) -> None:
+        # Verify number of queries for Realm admin isn't much higher than for normal users.
+        self.login(self.example_email("iago"))
+        flush_per_request_caches()
+        with queries_captured() as queries:
+            with patch('zerver.lib.cache.cache_set') as cache_mock:
+                result = self._get_home_page()
+                self.assertEqual(result.status_code, 200)
+                self.assert_length(cache_mock.call_args_list, 6)
+            self.assert_length(queries, 39)
 
     @slow("Creates and subscribes 10 users in a loop.  Should use bulk queries.")
     def test_num_queries_with_streams(self) -> None:
@@ -248,7 +268,7 @@ class HomeTest(ZulipTestCase):
         with queries_captured() as queries2:
             result = self._get_home_page()
 
-        self.assert_length(queries2, 35)
+        self.assert_length(queries2, 36)
 
         # Do a sanity check that our new streams were in the payload.
         html = result.content.decode('utf-8')
@@ -264,7 +284,7 @@ class HomeTest(ZulipTestCase):
     def _get_page_params(self, result: HttpResponse) -> Dict[str, Any]:
         html = result.content.decode('utf-8')
         lines = html.split('\n')
-        page_params_line = [l for l in lines if l.startswith('var page_params')][0]
+        page_params_line = [l for l in lines if re.match('^\s*var page_params', l)][0]
         page_params_json = page_params_line.split(' = ')[1].rstrip(';')
         page_params = ujson.loads(page_params_json)
         return page_params
@@ -390,8 +410,7 @@ class HomeTest(ZulipTestCase):
         user.save()
         return user
 
-    def test_signup_notifications_stream(self):
-        # type: () -> None
+    def test_signup_notifications_stream(self) -> None:
         email = self.example_email("hamlet")
         realm = get_realm('zulip')
         realm.signup_notifications_stream = get_stream('Denmark', realm)

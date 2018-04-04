@@ -9,7 +9,7 @@ Zulip in Production
    requirements
    Installing a production server <install>
    troubleshooting
-   customize
+   settings
    mobile-push-notifications
    maintain-secure-upgrade
    security-model
@@ -17,11 +17,3 @@ Zulip in Production
    postgres
    ssl-certificates
    email
-
-.. toctree::
-   :hidden:
-
-   expensive-migrations
-   install-existing-server
-   multiple-organizations
-   password-strength

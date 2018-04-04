@@ -1,6 +1,7 @@
 
 from functools import wraps
 
+from django.utils.lru_cache import lru_cache
 from django.core.cache import cache as djcache
 from django.core.cache import caches
 from django.conf import settings
@@ -106,15 +107,18 @@ def get_cache_backend(cache_name: Optional[str]) -> BaseCache:
         return djcache
     return caches[cache_name]
 
-def get_cache_with_key(keyfunc: Any, cache_name: Optional[str]=None) -> Any:
+def get_cache_with_key(
+        keyfunc: Callable[..., Text],
+        cache_name: Optional[str]=None
+) -> Callable[[Callable[..., ReturnT]], Callable[..., ReturnT]]:
     """
     The main goal of this function getting value from the cache like in the "cache_with_key".
     A cache value can contain any data including the "None", so
     here used exception for case if value isn't found in the cache.
     """
-    def decorator(func: Callable[..., Any]) -> (Callable[..., Any]):
+    def decorator(func: Callable[..., ReturnT]) -> (Callable[..., ReturnT]):
         @wraps(func)
-        def func_with_caching(*args: Any, **kwargs: Any) -> Callable[..., Any]:
+        def func_with_caching(*args: Any, **kwargs: Any) -> Callable[..., ReturnT]:
             key = keyfunc(*args, **kwargs)
             val = cache_get(key, cache_name=cache_name)
             if val is not None:
@@ -125,8 +129,10 @@ def get_cache_with_key(keyfunc: Any, cache_name: Optional[str]=None) -> Any:
 
     return decorator
 
-def cache_with_key(keyfunc, cache_name=None, timeout=None, with_statsd_key=None):
-    # type: (Callable[..., Text], Optional[str], Optional[int], Optional[str]) -> Callable[[Callable[..., ReturnT]], Callable[..., ReturnT]]
+def cache_with_key(
+        keyfunc: Callable[..., Text], cache_name: Optional[str]=None,
+        timeout: Optional[int]=None, with_statsd_key: Optional[str]=None
+) -> Callable[[Callable[..., ReturnT]], Callable[..., ReturnT]]:
     """Decorator which applies Django caching to a function.
 
        Decorator argument is a function which computes a cache key
@@ -289,7 +295,7 @@ def cache(func: Callable[..., ReturnT]) -> Callable[..., ReturnT]:
     return cache_with_key(keyfunc)(func)
 
 def display_recipient_cache_key(recipient_id: int) -> Text:
-    return u"display_recipient_dict:%d" % (recipient_id,)
+    return "display_recipient_dict:%d" % (recipient_id,)
 
 def user_profile_by_email_cache_key(email: Text) -> Text:
     # See the comment in zerver/lib/avatar_hash.py:gravatar_hash for why we
@@ -297,25 +303,20 @@ def user_profile_by_email_cache_key(email: Text) -> Text:
     # with high likelihood be ASCII-only for the foreseeable future.
     return 'user_profile_by_email:%s' % (make_safe_digest(email.strip()),)
 
-def user_profile_cache_key_id(email, realm_id):
-    # type: (Text, int) -> Text
+def user_profile_cache_key_id(email: Text, realm_id: int) -> Text:
     return u"user_profile:%s:%s" % (make_safe_digest(email.strip()), realm_id,)
 
-def user_profile_cache_key(email, realm):
-    # type: (Text, Realm) -> Text
+def user_profile_cache_key(email: Text, realm: 'Realm') -> Text:
     return user_profile_cache_key_id(email, realm.id)
 
 def bot_profile_cache_key(email: Text) -> Text:
-    return u"bot_profile:%s" % (make_safe_digest(email.strip()))
+    return "bot_profile:%s" % (make_safe_digest(email.strip()))
 
 def user_profile_by_id_cache_key(user_profile_id: int) -> Text:
-    return u"user_profile_by_id:%s" % (user_profile_id,)
+    return "user_profile_by_id:%s" % (user_profile_id,)
 
 def user_profile_by_api_key_cache_key(api_key: Text) -> Text:
-    return u"user_profile_by_api_key:%s" % (api_key,)
-
-# TODO: Refactor these cache helpers into another file that can import
-# models.py so that python v3 style type annotations can also work.
+    return "user_profile_by_api_key:%s" % (api_key,)
 
 realm_user_dict_fields = [
     'id', 'full_name', 'short_name', 'email',
@@ -323,10 +324,10 @@ realm_user_dict_fields = [
     'is_realm_admin', 'is_bot', 'realm_id', 'timezone']  # type: List[str]
 
 def realm_user_dicts_cache_key(realm_id: int) -> Text:
-    return u"realm_user_dicts:%s" % (realm_id,)
+    return "realm_user_dicts:%s" % (realm_id,)
 
 def active_user_ids_cache_key(realm_id: int) -> Text:
-    return u"active_user_ids:%s" % (realm_id,)
+    return "active_user_ids:%s" % (realm_id,)
 
 bot_dict_fields = ['id', 'full_name', 'short_name', 'bot_type', 'email',
                    'is_active', 'default_sending_stream__name',
@@ -336,16 +337,14 @@ bot_dict_fields = ['id', 'full_name', 'short_name', 'bot_type', 'email',
                    'bot_owner__email', 'avatar_source',
                    'avatar_version']  # type: List[str]
 
-def bot_dicts_in_realm_cache_key(realm):
-    # type: (Realm) -> Text
-    return u"bot_dicts_in_realm:%s" % (realm.id,)
+def bot_dicts_in_realm_cache_key(realm: 'Realm') -> Text:
+    return "bot_dicts_in_realm:%s" % (realm.id,)
 
 def get_stream_cache_key(stream_name: Text, realm_id: int) -> Text:
-    return u"stream_by_realm_and_name:%s:%s" % (
+    return "stream_by_realm_and_name:%s:%s" % (
         realm_id, make_safe_digest(stream_name.strip().lower()))
 
-def delete_user_profile_caches(user_profiles):
-    # type: (Iterable[UserProfile]) -> None
+def delete_user_profile_caches(user_profiles: Iterable['UserProfile']) -> None:
     keys = []
     for user_profile in user_profiles:
         keys.append(user_profile_by_email_cache_key(user_profile.email))
@@ -355,8 +354,7 @@ def delete_user_profile_caches(user_profiles):
 
     cache_delete_many(keys)
 
-def delete_display_recipient_cache(user_profile):
-    # type: (UserProfile) -> None
+def delete_display_recipient_cache(user_profile: 'UserProfile') -> None:
     from zerver.models import Subscription  # We need to import here to avoid cyclic dependency.
     recipient_ids = Subscription.objects.filter(user_profile=user_profile)
     recipient_ids = recipient_ids.values_list('recipient_id', flat=True)
@@ -410,15 +408,22 @@ def flush_realm(sender: Any, **kwargs: Any) -> None:
     users = realm.get_active_users()
     delete_user_profile_caches(users)
 
+    # Deleting realm or updating message_visibility_limit
+    # attribute should clear the first_visible_message_id cache.
+    if kwargs.get('update_fields') is None or "message_visibility_limit" in kwargs['update_fields']:
+        cache_delete(realm_first_visible_message_id_cache_key(realm))
+
     if realm.deactivated:
         cache_delete(realm_user_dicts_cache_key(realm.id))
         cache_delete(active_user_ids_cache_key(realm.id))
         cache_delete(bot_dicts_in_realm_cache_key(realm))
         cache_delete(realm_alert_words_cache_key(realm))
 
-def realm_alert_words_cache_key(realm):
-    # type: (Realm) -> Text
-    return u"realm_alert_words:%s" % (realm.string_id,)
+def realm_alert_words_cache_key(realm: 'Realm') -> Text:
+    return "realm_alert_words:%s" % (realm.string_id,)
+
+def realm_first_visible_message_id_cache_key(realm: 'Realm') -> Text:
+    return u"realm_first_visible_message_id:%s" % (realm.string_id,)
 
 # Called by models.py to flush the stream cache whenever we save a stream
 # object.
@@ -438,10 +443,57 @@ def flush_stream(sender: Any, **kwargs: Any) -> None:
 def to_dict_cache_key_id(message_id: int) -> Text:
     return 'message_dict:%d' % (message_id,)
 
-def to_dict_cache_key(message):
-    # type: (Message) -> Text
+def to_dict_cache_key(message: 'Message') -> Text:
     return to_dict_cache_key_id(message.id)
 
 def flush_message(sender: Any, **kwargs: Any) -> None:
     message = kwargs['instance']
     cache_delete(to_dict_cache_key_id(message.id))
+
+DECORATOR = Callable[[Callable[..., Any]], Callable[..., Any]]
+
+def ignore_unhashable_lru_cache(maxsize: int=128, typed: bool=False) -> DECORATOR:
+    """
+    This is a wrapper over lru_cache function. It adds following features on
+    top of lru_cache:
+
+        * It will not cache result of functions with unhashable arguments.
+        * It will clear cache whenever zerver.lib.cache.KEY_PREFIX changes.
+    """
+    internal_decorator = lru_cache(maxsize=maxsize, typed=typed)
+
+    def decorator(user_function: Callable[..., Any]) -> Callable[..., Any]:
+        if settings.DEVELOPMENT and not settings.TEST_SUITE:  # nocoverage
+            # In the development environment, we want every file
+            # change to refresh the source files from disk.
+            return user_function
+        cache_enabled_user_function = internal_decorator(user_function)
+
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            if not hasattr(cache_enabled_user_function, 'key_prefix'):
+                cache_enabled_user_function.key_prefix = KEY_PREFIX
+
+            if cache_enabled_user_function.key_prefix != KEY_PREFIX:
+                # Clear cache when cache.KEY_PREFIX changes. This is used in
+                # tests.
+                cache_enabled_user_function.cache_clear()
+                cache_enabled_user_function.key_prefix = KEY_PREFIX
+
+            try:
+                return cache_enabled_user_function(*args, **kwargs)
+            except TypeError:
+                # args or kwargs contains an element which is unhashable. In
+                # this case we don't cache the result.
+                pass
+
+            # Deliberately calling this function from outside of exception
+            # handler to get a more descriptive traceback. Otherise traceback
+            # can include the exception from cached_enabled_user_function as
+            # well.
+            return user_function(*args, **kwargs)
+
+        setattr(wrapper, 'cache_info', cache_enabled_user_function.cache_info)
+        setattr(wrapper, 'cache_clear', cache_enabled_user_function.cache_clear)
+        return wrapper
+
+    return decorator

@@ -36,7 +36,7 @@ function resend_message(message, row) {
     }
 
     sent_messages.start_resend(local_id);
-    compose.transmit_message(message, on_success, on_error);
+    transmit.send_message(message, on_success, on_error);
 }
 
 function truncate_precision(float) {
@@ -60,19 +60,19 @@ var get_next_local_id = (function () {
             // If our id is already used, it is probably an edge case like we had
             // to abort a very recent message.
             blueslip.warn("We don't reuse ids for local echo.");
-            return undefined;
+            return;
         }
 
         if (next_local_id % 1 > local_id_increment * 5) {
             blueslip.warn("Turning off local echo for this message to let host catch up");
-            return undefined;
+            return;
         }
 
         if (next_local_id % 1 === 0) {
             // The logic to stop at 0.05 should prevent us from ever wrapping around
             // to the next integer.
             blueslip.error("Programming error");
-            return undefined;
+            return;
         }
 
         already_used[next_local_id] = true;
@@ -89,7 +89,6 @@ function insert_local_message(message_request, local_id) {
 
     // Locally delivered messages cannot be unread (since we sent them), nor
     // can they alert the user.
-    message.flags = ['read']; // we may add more flags later
     message.unread = false;
 
     message.raw_content = message.content;
@@ -140,18 +139,18 @@ function insert_local_message(message_request, local_id) {
 
 exports.try_deliver_locally = function try_deliver_locally(message_request) {
     if (markdown.contains_backend_only_syntax(message_request.content)) {
-        return undefined;
+        return;
     }
 
     if (narrow_state.active() && !narrow_state.filter().can_apply_locally()) {
-        return undefined;
+        return;
     }
 
     var next_local_id = get_next_local_id();
 
     if (!next_local_id) {
         // This can happen for legit reasons.
-        return undefined;
+        return;
     }
 
     return insert_local_message(message_request, next_local_id);
@@ -230,9 +229,7 @@ exports.process_from_server = function process_from_server(messages) {
             sent_messages.mark_disparity(message.local_id);
         }
 
-        // Update our flags based on what the server gave us.
-        client_message.flags = message.flags;
-        message_store.set_message_booleans(client_message, client_message.flags);
+        message_store.update_booleans(client_message, message.flags);
 
         // We don't try to highlight alert words locally, so we have to
         // do it now.  (Note that we will indeed highlight alert words in

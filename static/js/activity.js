@@ -352,6 +352,12 @@ exports.build_user_sidebar = function () {
 
     resize.resize_page_components();
 
+    // Highlight top user when searching
+    $('#user_presences li.user_sidebar_entry.highlighted_user').removeClass('highlighted_user');
+    if (exports.searching()) {
+        var all_streams = $('#user_presences li.user_sidebar_entry.narrow-filter');
+        stream_list.highlight_first(all_streams, 'highlighted_user');
+    }
     return user_info; // for testing
 };
 
@@ -473,6 +479,8 @@ exports.initialize = function () {
     exports.set_user_list_filter_handlers();
 
     $('#clear_search_people_button').on('click', exports.clear_search);
+    $('#userlist-header').click(exports.toggle_filter_displayed);
+
     // Let the server know we're here, but pass "false" for
     // want_redraw, since we just got all this info in page_params.
     focus_ping(false);
@@ -512,31 +520,51 @@ exports.searching = function () {
     return $('.user-list-filter').expectOne().is(':focus');
 };
 
-function update_clear_search_button() {
-    var focused = $('.user-list-filter').is(':focus');
-
-    // Show button iff the search input is focused, or has non-empty contents
-    if (focused || $('.user-list-filter').val()) {
-        $('#clear_search_people_button').prop('disabled', false);
-    } else {
-        $('#clear_search_people_button').attr('disabled', 'disabled');
+exports.clear_search = function () {
+    var filter = $('.user-list-filter').expectOne();
+    if (filter.val() === '') {
+        exports.clear_and_hide_search();
+        return;
     }
-}
+    filter.val('');
+    filter.blur();
+    update_users_for_search();
+};
 
 exports.escape_search = function () {
     var filter = $('.user-list-filter').expectOne();
     if (filter.val() === '') {
-        filter.blur();
+        exports.clear_and_hide_search();
         return;
     }
     filter.val('');
-    update_clear_search_button();
     update_users_for_search();
 };
+
+exports.clear_and_hide_search = function () {
+    var filter = $('.user-list-filter').expectOne();
+    if (filter.val() !== '') {
+        filter.val('');
+        update_users_for_search();
+    }
+    filter.blur();
+    $('#user-list .input-append').addClass('notdisplayed');
+    // Undo highlighting
+    $('#user_presences li.user_sidebar_entry.highlighted_user').removeClass('highlighted_user');
+};
+
+function highlight_first_user() {
+    if ($('#user_presences li.user_sidebar_entry.narrow-filter.highlighted_user').length === 0) {
+        // Highlight
+        var all_streams = $('#user_presences li.user_sidebar_entry.narrow-filter');
+        stream_list.highlight_first(all_streams, 'highlighted_user');
+    }
+}
 
 exports.initiate_search = function () {
     var filter = $('.user-list-filter').expectOne();
     var column = $('.user-list-filter').closest(".app-main [class^='column-']");
+    $('#user-list .input-append').removeClass('notdisplayed');
     if (!column.hasClass("expanded")) {
         popovers.hide_all();
         if (column.hasClass('column-left')) {
@@ -546,47 +574,47 @@ exports.initiate_search = function () {
         }
     }
     filter.focus();
+    highlight_first_user();
 };
 
-exports.blur_search = function () {
-    $('.user-list-filter').blur();
-    update_clear_search_button();
+exports.toggle_filter_displayed = function () {
+    if ($('#user-list .input-append').hasClass('notdisplayed')) {
+        exports.initiate_search();
+    } else {
+        exports.clear_and_hide_search();
+    }
 };
 
-exports.clear_search = function () {
-    $('.user-list-filter').val('');
-    $('.user-list-filter').blur();
-    update_clear_search_button();
-    update_users_for_search();
-};
+function keydown_enter_key() {
+    // Is there at least one user?
+    if ($('#user_presences li.user_sidebar_entry.narrow-filter').length > 0) {
+        // There must be a 'highlighted_user' user
+        var select_user = $('#user_presences li.user_sidebar_entry.narrow-filter.highlighted_user')
+                            .expectOne().attr('data-user-id');
 
-function maybe_select_person(e) {
-    if (e.keyCode === 13) {
-        // Enter key was pressed
+        var email = people.get_person_from_user_id(select_user).email;
+        narrow.by('pm-with', email, {select_first_unread: true, trigger: 'user sidebar'});
+        compose_actions.start('private', {  trigger: 'sidebar enter key',
+                                            private_message_recipient: email});
 
-        // Prevent a newline from being entered into the soon-to-be-opened composebox
-        e.preventDefault();
-        e.stopPropagation();
-
-        var topPerson = $('#user_presences li.user_sidebar_entry').first().attr('data-user-id');
-        var user_list = meta.$user_list_filter;
-        var search_term = user_list.expectOne().val().trim();
-        if ((topPerson !== undefined) && (search_term !== '')) {
-            // undefined if there are no results
-            var email = people.get_person_from_user_id(topPerson).email;
-            narrow.by('pm-with', email, {select_first_unread: true, trigger: 'user sidebar'});
-            compose_actions.start('private', {
-                trigger: 'sidebar enter key',
-                private_message_recipient: email});
-        }
         // Clear the user filter
-        exports.escape_search();
+        exports.clear_and_hide_search();
     }
 }
 
+function keydown_user_filter(e) {
+    stream_list.keydown_filter(e, '#user_presences li.user_sidebar_entry.narrow-filter',
+                               $('#user_presences'), 'highlighted_user', keydown_enter_key);
+}
+
 function focus_user_filter(e) {
+    highlight_first_user();
     e.stopPropagation();
-    update_clear_search_button();
+}
+
+function focusout_user_filter() {
+    // Undo highlighting
+    $('#user_presences li.user_sidebar_entry.highlighted_user').removeClass('highlighted_user');
 }
 
 exports.get_filtered_and_sorted_user_ids = function () {
@@ -614,8 +642,8 @@ exports.set_user_list_filter_handlers = function () {
     meta.$user_list_filter.expectOne()
         .on('click', focus_user_filter)
         .on('input', update_users_for_search)
-        .on('keydown', maybe_select_person)
-        .on('blur', update_clear_search_button);
+        .on('keydown', keydown_user_filter)
+        .on('blur', focusout_user_filter);
 };
 
 exports.get_filter_text = function () {

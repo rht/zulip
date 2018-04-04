@@ -5,7 +5,7 @@ from typing import (
 )
 
 from django.core import signing
-from django.core.urlresolvers import LocaleRegexURLResolver
+from django.urls.resolvers import LocaleRegexURLResolver
 from django.conf import settings
 from django.test import TestCase, override_settings
 from django.test.client import (
@@ -21,7 +21,6 @@ from zerver.lib.avatar import avatar_url
 from zerver.lib.cache import get_cache_backend
 from zerver.lib.initial_password import initial_password
 from zerver.lib.db import TimeTrackingCursor
-from zerver.lib.str_utils import force_text
 from zerver.lib import cache
 from zerver.tornado import event_queue
 from zerver.tornado.handlers import allocate_handler_id
@@ -64,7 +63,6 @@ import urllib
 from zerver.lib.str_utils import NonBinaryStr
 from moto import mock_s3_deprecated
 
-from contextlib import contextmanager
 import fakeldap
 import ldap
 
@@ -117,8 +115,7 @@ def simulated_empty_cache() -> Generator[
         cache_queries.append(('get', key, cache_name))
         return None
 
-    def my_cache_get_many(keys, cache_name=None):  # nocoverage -- simulated code doesn't use this
-        # type: (List[Text], Optional[str]) -> Dict[Text, Any]
+    def my_cache_get_many(keys: List[Text], cache_name: Optional[str]=None) -> Dict[Text, Any]:  # nocoverage -- simulated code doesn't use this
         cache_queries.append(('getmany', keys, cache_name))
         return {}
 

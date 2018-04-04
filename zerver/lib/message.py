@@ -5,6 +5,9 @@ import zlib
 
 from django.utils.translation import ugettext as _
 from django.utils.timezone import now as timezone_now
+from django.db.models import Sum
+
+from analytics.lib.counts import COUNT_STATS, RealmCount
 
 from zerver.lib.avatar import get_avatar_field
 import zerver.lib.bugdown as bugdown
@@ -13,6 +16,8 @@ from zerver.lib.cache import (
     generic_bulk_cached_fetch,
     to_dict_cache_key,
     to_dict_cache_key_id,
+    realm_first_visible_message_id_cache_key,
+    cache_get, cache_set,
 )
 from zerver.lib.request import JsonableError
 from zerver.lib.stream_subscription import (
@@ -259,24 +264,23 @@ class MessageDict:
 
     @staticmethod
     def build_message_dict(
-            message,
-            message_id,
-            last_edit_time,
-            edit_history,
-            content,
-            subject,
-            pub_date,
-            rendered_content,
-            rendered_content_version,
-            sender_id,
-            sender_realm_id,
-            sending_client_name,
-            recipient_id,
-            recipient_type,
-            recipient_type_id,
-            reactions
-    ):
-        # type: (Optional[Message], int, Optional[datetime.datetime], Optional[Text], Text, Text, datetime.datetime, Optional[Text], Optional[int], int, int, Text, int, int, int, List[Dict[str, Any]]) -> Dict[str, Any]
+            message: Optional[Message],
+            message_id: int,
+            last_edit_time: Optional[datetime.datetime],
+            edit_history: Optional[Text],
+            content: Text,
+            subject: Text,
+            pub_date: datetime.datetime,
+            rendered_content: Optional[Text],
+            rendered_content_version: Optional[int],
+            sender_id: int,
+            sender_realm_id: int,
+            sending_client_name: Text,
+            recipient_id: int,
+            recipient_type: int,
+            recipient_type_id: int,
+            reactions: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
 
         obj = dict(
             id                = message_id,
@@ -509,15 +513,14 @@ def render_markdown(message: Message,
     else:
         message_user_ids = user_ids
 
-    if message is not None:
-        message.mentions_wildcard = False
-        message.mentions_user_ids = set()
-        message.mentions_user_group_ids = set()
-        message.alert_words = set()
-        message.links_for_preview = set()
+    message.mentions_wildcard = False
+    message.mentions_user_ids = set()
+    message.mentions_user_group_ids = set()
+    message.alert_words = set()
+    message.links_for_preview = set()
 
-        if realm is None:
-            realm = message.get_realm()
+    if realm is None:
+        realm = message.get_realm()
 
     possible_words = set()  # type: Set[Text]
     if realm_alert_words is not None:
@@ -525,12 +528,7 @@ def render_markdown(message: Message,
             if user_id in message_user_ids:
                 possible_words.update(set(words))
 
-    if message is None:
-        # If we don't have a message, then we are in the compose preview
-        # codepath, so we know we are dealing with a human.
-        sent_by_bot = False
-    else:
-        sent_by_bot = get_user_profile_by_id(message.sender_id).is_bot
+    sent_by_bot = get_user_profile_by_id(message.sender_id).is_bot
 
     # DO MAIN WORK HERE -- call bugdown to convert
     rendered_content = bugdown.convert(
@@ -845,3 +843,29 @@ def apply_unread_message_event(user_profile: UserProfile,
 
     if 'mentioned' in flags:
         state['mentions'].add(message_id)
+
+def estimate_recent_messages(realm: Realm, hours: int) -> int:
+    stat = COUNT_STATS['messages_sent:is_bot:hour']
+    d = timezone_now() - datetime.timedelta(hours=hours)
+    return RealmCount.objects.filter(property=stat.property, end_time__gt=d,
+                                     realm=realm).aggregate(Sum('value'))['value__sum'] or 0
+
+def get_first_visible_message_id(realm: Realm) -> int:
+    val = cache_get(realm_first_visible_message_id_cache_key(realm))
+    if val is not None:
+        return val[0]
+    return 0
+
+def maybe_update_first_visible_message_id(realm: Realm, lookback_hours: int) -> None:
+    cache_empty = cache_get(realm_first_visible_message_id_cache_key(realm)) is None
+    recent_messages_count = estimate_recent_messages(realm, lookback_hours)
+    if realm.message_visibility_limit is not None and (recent_messages_count > 0 or cache_empty):
+        update_first_visible_message_id(realm)
+
+def update_first_visible_message_id(realm: Realm) -> None:
+    try:
+        first_visible_message_id = Message.objects.filter(sender__realm=realm).values('id').\
+            order_by('-id')[realm.message_visibility_limit - 1]["id"]
+    except IndexError:
+        first_visible_message_id = 0
+    cache_set(realm_first_visible_message_id_cache_key(realm), first_visible_message_id)

@@ -97,6 +97,37 @@ exports.get_sub_by_name = function (name) {
     return subs_by_stream_id.get(stream_id);
 };
 
+exports.name_to_slug = function (name) {
+    var stream_id = exports.get_stream_id(name);
+
+    if (!stream_id) {
+        return name;
+    }
+
+    // The name part of the URL doesn't really matter, so we try to
+    // make it pretty.
+    name = name.replace(' ', '-');
+
+    return stream_id + '-' + name;
+};
+
+exports.slug_to_name = function (slug) {
+    var m = /^([\d]+)-/.exec(slug);
+    if (m) {
+        var stream_id = m[1];
+        var sub = subs_by_stream_id.get(stream_id);
+        if (sub) {
+            return sub.name;
+        }
+        // if nothing was found above, we try to match on the stream
+        // name in the somewhat unlikely event they had a historical
+        // link to a stream like 4-horsemen
+    }
+
+    return slug;
+};
+
+
 exports.delete_sub = function (stream_id) {
     var sub = subs_by_stream_id.get(stream_id);
     if (!sub) {
@@ -111,9 +142,6 @@ exports.get_non_default_stream_names = function () {
     var subs = stream_info.values();
     subs = _.reject(subs, function (sub) {
         return exports.is_default_stream_id(sub.stream_id);
-    });
-    subs = _.reject(subs, function (sub) {
-        return sub.invite_only;
     });
     var names = _.pluck(subs, 'name');
     return names;
@@ -159,15 +187,24 @@ exports.get_subscriber_count = function (stream_name) {
 };
 
 exports.render_stream_description = function (sub) {
-    if (sub.description) {
+    if (sub.description !== undefined) {
         sub.rendered_description = marked(sub.description).replace('<p>', '').replace('</p>', '');
     }
 };
 
 exports.update_calculated_fields = function (sub) {
     sub.is_admin = page_params.is_admin;
+    // Admin can change any stream's name & description either stream is public or
+    // private, subscribed or unsubscribed.
+    sub.can_change_name_description = page_params.is_admin;
+    // If stream is public then any user can subscribe. If stream is private then only
+    // subscribed users can unsubscribe.
+    sub.should_display_subscription_button = !sub.invite_only || sub.subscribed;
     sub.can_make_public = page_params.is_admin && sub.invite_only && sub.subscribed;
     sub.can_make_private = page_params.is_admin && !sub.invite_only;
+    sub.can_change_subscription_type = sub.can_make_public || sub.can_make_private;
+    // User can add other users to stream if stream is public or user is subscribed to stream.
+    sub.can_access_subscribers = !sub.invite_only || sub.subscribed || page_params.is_admin;
     sub.preview_url = narrow.by_stream_uri(sub.name);
     exports.render_stream_description(sub);
     exports.update_subscribers_count(sub);
@@ -326,12 +363,11 @@ exports.remove_subscriber = function (stream_name, user_id) {
 
 exports.user_is_subscribed = function (stream_name, user_email) {
     var sub = exports.get_sub(stream_name);
-    if (typeof sub === 'undefined' || !sub.subscribed) {
-        // If we don't know about the stream, or we ourselves are not
-        // subscribed, we can't keep track of the subscriber list in general,
+    if (typeof sub === 'undefined' || !sub.can_access_subscribers) {
+        // If we don't know about the stream, or we ourselves cannot access subscriber list,
         // so we return undefined (treated as falsy if not explicitly handled).
-        blueslip.warn("We got a user_is_subscribed call for a non-existent or unsubscribed stream.");
-        return undefined;
+        blueslip.warn("We got a user_is_subscribed call for a non-existent or inaccessible stream.");
+        return;
     }
     var user_id = people.get_user_id(user_email);
     if (!user_id) {
@@ -392,6 +428,8 @@ exports.create_sub_from_server_data = function (stream_name, attrs) {
         sub.color = stream_color.pick_color(used_colors);
     }
 
+    exports.update_calculated_fields(sub);
+
     exports.add_sub(stream_name, sub);
 
     return sub;
@@ -448,10 +486,11 @@ exports.get_streams_for_admin = function () {
 };
 
 exports.initialize_from_page_params = function () {
-    function populate_subscriptions(subs, subscribed) {
+    function populate_subscriptions(subs, subscribed, previously_subscribed) {
         subs.forEach(function (sub) {
             var stream_name = sub.name;
             sub.subscribed = subscribed;
+            sub.previously_subscribed = previously_subscribed;
 
             exports.create_sub_from_server_data(stream_name, sub);
         });
@@ -459,9 +498,9 @@ exports.initialize_from_page_params = function () {
 
     exports.set_realm_default_streams(page_params.realm_default_streams);
 
-    populate_subscriptions(page_params.subscriptions, true);
-    populate_subscriptions(page_params.unsubscribed, false);
-    populate_subscriptions(page_params.never_subscribed, false);
+    populate_subscriptions(page_params.subscriptions, true, true);
+    populate_subscriptions(page_params.unsubscribed, false, true);
+    populate_subscriptions(page_params.never_subscribed, false, false);
 
     // Migrate the notifications stream from the new API structure to
     // what the frontend expects.
@@ -489,7 +528,7 @@ exports.get_newbie_stream = function () {
         return page_params.notifications_stream;
     }
 
-    return undefined;
+    return;
 };
 
 exports.remove_default_stream = function (stream_id) {

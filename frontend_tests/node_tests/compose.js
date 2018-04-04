@@ -2,13 +2,19 @@ set_global('$', global.make_zjquery());
 set_global('i18n', global.stub_i18n);
 
 set_global('page_params', {
-    use_websockets: true,
+});
+set_global('navigator', {
+    userAgent: '',
 });
 
-set_global('navigator', {});
 set_global('document', {
-    location: {
-    },
+    getElementById: function () { return $('#compose-textarea'); },
+    execCommand: function () { return false; },
+    location: {},
+});
+set_global('transmit', {});
+set_global('window', {
+    bridge: false,
 });
 set_global('channel', {});
 set_global('templates', {});
@@ -26,17 +32,16 @@ set_global('feature_flags', {
     resize_bottom_whitespace: noop,
 });
 set_global('echo', {});
-set_global('socket', {});
-set_global('Socket', function () {
-    return global.socket;
-});
 set_global('stream_edit', {});
 set_global('markdown', {});
 set_global('loading', {});
 
 set_global('sent_messages', {
     start_tracking_message: noop,
-    report_server_ack: noop,
+});
+set_global('notifications', {
+    notify_above_composebox: noop,
+    clear_compose_notifications: noop,
 });
 
 // Setting these up so that we can test that links to uploads within messages are
@@ -51,9 +56,11 @@ zrequire('Handlebars', 'handlebars');
 zrequire('stream_data');
 zrequire('compose_state');
 zrequire('people');
+zrequire('input_pill');
+zrequire('user_pill');
+zrequire('compose_pm_pill');
 zrequire('compose');
 zrequire('upload');
-page_params.use_websockets = false;
 
 var me = {
     email: 'me@example.com',
@@ -79,15 +86,6 @@ people.initialize_current_user(me.user_id);
 people.add(alice);
 people.add(bob);
 
-(function test_update_email() {
-    compose_state.recipient('');
-    assert.equal(compose.update_email(), undefined);
-
-    compose_state.recipient('bob@example.com');
-    compose.update_email(32, 'bob_alias@example.com');
-    assert.equal(compose_state.recipient(), 'bob_alias@example.com');
-}());
-
 (function test_validate_stream_message_address_info() {
     var sub = {
         stream_id: 101,
@@ -99,12 +97,12 @@ people.add(bob);
 
     $('#stream').select(noop);
     assert(!compose.validate_stream_message_address_info('foobar'));
-    assert.equal($('#compose-error-msg').html(), "<p>The stream <b>foobar</b> does not exist.</p><p>Manage your subscriptions <a href='#streams/all'>on your Streams page</a>.</p>");
+    assert.equal($('#compose-error-msg').html(), "translated: <p>The stream <b>foobar</b> does not exist.</p><p>Manage your subscriptions <a href='#streams/all'>on your Streams page</a>.</p>");
 
     sub.subscribed = false;
     stream_data.add_sub('social', sub);
     assert(!compose.validate_stream_message_address_info('social'));
-    assert.equal($('#compose-error-msg').html(), "<p>You're not subscribed to the stream <b>social</b>.</p><p>Manage your subscriptions <a href='#streams/all'>on your Streams page</a>.</p>");
+    assert.equal($('#compose-error-msg').html(), "translated: <p>You're not subscribed to the stream <b>social</b>.</p><p>Manage your subscriptions <a href='#streams/all'>on your Streams page</a>.</p>");
 
     global.page_params.narrow_stream = false;
     channel.post = function (payload) {
@@ -123,14 +121,14 @@ people.add(bob);
         payload.success(payload.data);
     };
     assert(!compose.validate_stream_message_address_info('Frontend'));
-    assert.equal($('#compose-error-msg').html(), "<p>You're not subscribed to the stream <b>Frontend</b>.</p><p>Manage your subscriptions <a href='#streams/all'>on your Streams page</a>.</p>");
+    assert.equal($('#compose-error-msg').html(), "translated: <p>You're not subscribed to the stream <b>Frontend</b>.</p><p>Manage your subscriptions <a href='#streams/all'>on your Streams page</a>.</p>");
 
     channel.post = function (payload) {
         assert.equal(payload.data.stream, 'Frontend');
         payload.error({status: 404});
     };
     assert(!compose.validate_stream_message_address_info('Frontend'));
-    assert.equal($('#compose-error-msg').html(), "<p>The stream <b>Frontend</b> does not exist.</p><p>Manage your subscriptions <a href='#streams/all'>on your Streams page</a>.</p>");
+    assert.equal($('#compose-error-msg').html(), "translated: <p>The stream <b>Frontend</b> does not exist.</p><p>Manage your subscriptions <a href='#streams/all'>on your Streams page</a>.</p>");
 
     channel.post = function (payload) {
         assert.equal(payload.data.stream, 'social');
@@ -141,17 +139,49 @@ people.add(bob);
 }());
 
 (function test_validate() {
-    $("#compose-send-button").prop('disabled', false);
-    $("#compose-send-button").focus();
-    $("#sending-indicator").hide();
-    $("#compose-textarea").select(noop);
+    function initialize_pm_pill() {
+        set_global('$', global.make_zjquery());
+
+        $("#compose-send-button").prop('disabled', false);
+        $("#compose-send-button").focus();
+        $("#sending-indicator").hide();
+        $("#compose-textarea").select(noop);
+
+
+        var pm_pill_container = $.create('fake-pm-pill-container');
+        $('#private_message_recipient').set_parent(pm_pill_container);
+        pm_pill_container.set_find_results('.input', $('#private_message_recipient'));
+        $('#private_message_recipient').before = noop;
+
+        compose_pm_pill.initialize();
+
+        set_global('ui_util', {
+            place_caret_at_end: noop,
+        });
+
+        $("#zephyr-mirror-error").is = noop;
+        $("#private_message_recipient").select(noop);
+
+        set_global('templates', {
+            render: function (fn) {
+                assert.equal(fn, 'input_pill');
+                return '<div>pill-html</div>';
+            },
+        });
+    }
+
+    function add_content_to_compose_box() {
+        $("#compose-textarea").val('foobarfoobar');
+    }
+
+    initialize_pm_pill();
     assert(!compose.validate());
     assert(!$("#sending-indicator").visible());
     assert(!$("#compose-send-button").is_focused());
     assert.equal($("#compose-send-button").prop('disabled'), false);
     assert.equal($('#compose-error-msg').html(), i18n.t('You have nothing to send!'));
 
-    $("#compose-textarea").val('foobarfoobar');
+    add_content_to_compose_box();
     var zephyr_checked = false;
     $("#zephyr-mirror-error").is = function () {
         if (!zephyr_checked) {
@@ -164,23 +194,26 @@ people.add(bob);
     assert(zephyr_checked);
     assert.equal($('#compose-error-msg').html(), i18n.t('You need to be running Zephyr mirroring in order to send messages!'));
 
+    initialize_pm_pill();
+    add_content_to_compose_box();
+
     compose_state.set_message_type('private');
     compose_state.recipient('');
-    $("#private_message_recipient").select(noop);
     assert(!compose.validate());
-    assert.equal($('#compose-error-msg').html(), i18n.t('Please specify at least one recipient'));
+    assert.equal($('#compose-error-msg').html(), i18n.t('Please specify at least one valid recipient'));
 
+    initialize_pm_pill();
+    add_content_to_compose_box();
     compose_state.recipient('foo@zulip.com');
-    global.page_params.realm_is_zephyr_mirror_realm = true;
-    assert(compose.validate());
 
-    global.page_params.realm_is_zephyr_mirror_realm = false;
     assert(!compose.validate());
-    assert.equal($('#compose-error-msg').html(), i18n.t('The recipient foo@zulip.com is not valid', {}));
+
+    assert.equal($('#compose-error-msg').html(), i18n.t('Please specify at least one valid recipient', {}));
 
     compose_state.recipient('foo@zulip.com,alice@zulip.com');
     assert(!compose.validate());
-    assert.equal($('#compose-error-msg').html(), i18n.t('The recipients foo@zulip.com,alice@zulip.com are not valid', {}));
+
+    assert.equal($('#compose-error-msg').html(), i18n.t('Please specify at least one valid recipient', {}));
 
     people.add_in_realm(bob);
     compose_state.recipient('bob@example.com');
@@ -248,12 +281,173 @@ people.add(bob);
     $('#compose-all-everyone').append = function (data) {
         compose_content = data;
     };
-    compose_state.message_content('Hey @all');
+    compose_state.message_content('Hey @**all**');
     assert(!compose.validate());
     assert.equal($("#compose-send-button").prop('disabled'), false);
     assert(!$("#compose-send-status").visible());
     assert.equal(compose_content, 'compose_all_everyone_stub');
     assert($("#compose-all-everyone").visible());
+}());
+
+(function test_markdown_shortcuts() {
+    blueslip.error = noop;
+    blueslip.log = noop;
+
+    var queryCommandEnabled = true;
+    var event = {
+        keyCode: 66,
+        target: {
+            id: 'compose-textarea',
+        },
+        stopPropagation: noop,
+        preventDefault: noop,
+    };
+    var input_text = "";
+    var range_start = 0;
+    var range_length = 0;
+    var compose_value = $("#compose_textarea").val();
+    var selected_word = "";
+
+    global.document.queryCommandEnabled = function () {
+        return queryCommandEnabled;
+    };
+    global.document.execCommand = function (cmd, bool, markdown) {
+        var compose_textarea = $("#compose-textarea");
+        var value = compose_textarea.val();
+        $("#compose-textarea").val(value.substring(0, compose_textarea.range().start)+
+            markdown+value.substring(compose_textarea.range().end, value.length));
+    };
+
+    $("#compose-textarea").range = function () {
+        return {
+            start: range_start,
+            end: range_start + range_length,
+            length: range_length,
+            range: noop,
+            text: $("#compose-textarea").val().substring(range_start, range_length+range_start),
+        };
+    };
+    $('#compose-textarea').caret = noop;
+
+    function test_i_typed(isCtrl, isCmd) {
+        // Test 'i' is typed correctly.
+        $("#compose-textarea").val('i');
+        event.keyCode = undefined;
+        event.which = 73;
+        event.metaKey = isCmd;
+        event.ctrlKey = isCtrl;
+        compose.handle_keydown(event);
+        assert.equal("i", $('#compose-textarea').val());
+    }
+
+    function all_markdown_test(isCtrl, isCmd) {
+        input_text = "Any text.";
+        $("#compose-textarea").val(input_text);
+        compose_value = $("#compose-textarea").val();
+        // Select "text" word in compose box.
+        selected_word = "text";
+        range_start = compose_value.search(selected_word);
+        range_length = selected_word.length;
+
+        // Test bold:
+        // Mac env = cmd+b
+        // Windows/Linux = ctrl+b
+        event.keyCode = 66;
+        event.ctrlKey = isCtrl;
+        event.metaKey = isCmd;
+        compose.handle_keydown(event);
+        assert.equal("Any **text**.", $('#compose-textarea').val());
+        // Test if no text is selected.
+        range_start = 0;
+        // Change cursor to first position.
+        range_length = 0;
+        compose.handle_keydown(event);
+        assert.equal("****Any **text**.", $('#compose-textarea').val());
+
+        // Test italic:
+        // Mac = cmd+i
+        // Windows/Linux = ctrl+i
+        $("#compose-textarea").val(input_text);
+        range_start = compose_value.search(selected_word);
+        range_length = selected_word.length;
+        event.keyCode = 73;
+        event.shiftKey = false;
+        compose.handle_keydown(event);
+        assert.equal("Any *text*.", $('#compose-textarea').val());
+        // Test if no text is selected.
+        range_length = 0;
+        // Change cursor to first position.
+        range_start = 0;
+        compose.handle_keydown(event);
+        assert.equal("**Any *text*.", $('#compose-textarea').val());
+
+        // Test link insertion:
+        // Mac = cmd+shift+l
+        // Windows/Linux = ctrl+shift+l
+        $("#compose-textarea").val(input_text);
+        range_start = compose_value.search(selected_word);
+        range_length = selected_word.length;
+        event.keyCode = 76;
+        event.which = undefined;
+        event.shiftKey = true;
+        compose.handle_keydown(event);
+        assert.equal("Any [text](url).", $('#compose-textarea').val());
+        // Test if exec command is not enabled in browser.
+        queryCommandEnabled = false;
+        compose.handle_keydown(event);
+    }
+
+    // This function cross tests the cmd/ctrl + markdown shortcuts in
+    // Mac and Linux/Windows environments.  So in short, this tests
+    // that e.g. Cmd+B should be ignored on Linux/Windows and Ctrl+B
+    // should be ignored on Mac.
+    function os_specific_markdown_test(isCtrl, isCmd) {
+        input_text = "Any text.";
+        $("#compose-textarea").val(input_text);
+        compose_value = $("#compose-textarea").val();
+        selected_word = "text";
+        range_start = compose_value.search(selected_word);
+        range_length = selected_word.length;
+        event.metaKey = isCmd;
+        event.ctrlKey = isCtrl;
+
+        event.keyCode = 66;
+        compose.handle_keydown(event);
+        assert.equal(input_text, $('#compose-textarea').val());
+
+        event.keyCode = 73;
+        event.shiftKey = false;
+        compose.handle_keydown(event);
+        assert.equal(input_text, $('#compose-textarea').val());
+
+        event.keyCode = 76;
+        event.shiftKey = true;
+        compose.handle_keydown(event);
+        assert.equal(input_text, $('#compose-textarea').val());
+    }
+
+    // These keyboard shortcuts differ as to what key one should use
+    // on MacOS vs. other platforms: Cmd (Mac) vs. Ctrl (non-Mac).
+
+    // Default (Linux/Windows) userAgent tests:
+    test_i_typed(false, false);
+    // Check all the ctrl + markdown shortcuts work correctly
+    all_markdown_test(true, false);
+    // The Cmd + markdown shortcuts should do nothing on Linux/Windows
+    os_specific_markdown_test(false, true);
+
+    // Setting following userAgent to test in mac env
+    global.navigator.userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.167 Safari/537.36";
+
+    // Mac userAgent tests:
+    test_i_typed(false, false);
+    // The ctrl + markdown shortcuts should do nothing on mac
+    os_specific_markdown_test(true, false);
+    // Check all the Cmd + markdown shortcuts work correctly
+    all_markdown_test(false, true);
+
+    // Reset userAgent
+    global.navigator.userAgent = "";
 }());
 
 (function test_send_message_success() {
@@ -289,7 +483,7 @@ people.add(bob);
     function initialize_state_stub_dict() {
         stub_state = {};
         stub_state.local_id_counter = 0;
-        stub_state.send_msg_ajax_post_called = 0;
+        stub_state.send_msg_called = 0;
         stub_state.get_events_running_called = 0;
         stub_state.reify_message_id_checked = 0;
         return stub_state;
@@ -310,12 +504,15 @@ people.add(bob);
         compose_state.subject('');
         compose_state.set_message_type('private');
         page_params.user_id = 101;
-        compose_state.recipient('alice@example.com');
+        compose_state.recipient = function () {
+            return 'alice@example.com';
+        };
+
         echo.try_deliver_locally = function () {
             stub_state.local_id_counter += 1;
             return stub_state.local_id_counter;
         };
-        channel.post = function (payload) {
+        transmit.send_message = function (payload, success) {
             var single_msg = {
               type: 'private',
               content: '[foobar](/user_uploads/123456)',
@@ -330,12 +527,10 @@ people.add(bob);
               local_id: 1,
               locally_echoed: true,
             };
-            assert.equal(payload.url, '/json/messages');
-            assert.equal(_.keys(payload.data).length, 12);
-            assert.deepEqual(payload.data, single_msg);
-            payload.data.id = stub_state.local_id_counter;
-            payload.success(payload.data);
-            stub_state.send_msg_ajax_post_called += 1;
+            assert.deepEqual(payload, single_msg);
+            payload.id = stub_state.local_id_counter;
+            success(payload);
+            stub_state.send_msg_called += 1;
         };
         echo.reify_message_id = function (local_id, message_id) {
             assert.equal(typeof(local_id), 'number');
@@ -358,7 +553,7 @@ people.add(bob);
             local_id_counter: 1,
             get_events_running_called: 1,
             reify_message_id_checked: 1,
-            send_msg_ajax_post_called: 1,
+            send_msg_called: 1,
         };
         assert.deepEqual(stub_state, state);
         assert.equal($("#compose-textarea").val(), '');
@@ -368,52 +563,14 @@ people.add(bob);
         assert(!$("#sending-indicator").visible());
     }());
 
-    (function test_error_code_path_when_error_type_not_timeout() {
-        stub_state = initialize_state_stub_dict();
-        compose_state.set_message_type('stream');
-        var server_error_triggered = false;
-        channel.post = function (payload) {
-            payload.error('500', 'Internal Server Error');
-            stub_state.send_msg_ajax_post_called += 1;
-            server_error_triggered = true;
-        };
-        var reload_initiate_triggered = false;
-        global.reload = {
-            is_pending: function () { return true; },
-            initiate: function () {
-                reload_initiate_triggered = true;
-            },
-        };
-
-        compose.send_message();
-
-        var state = {
-            local_id_counter: 1,
-            get_events_running_called: 1,
-            reify_message_id_checked: 0,
-            send_msg_ajax_post_called: 1,
-        };
-        assert.deepEqual(stub_state, state);
-        assert(server_error_triggered);
-        assert(reload_initiate_triggered);
-    }());
-
     // This is the additional setup which is common to both the tests below.
-    var server_error_triggered = false;
-    var reload_initiate_triggered = false;
-    channel.post = function (payload) {
-        payload.error('408', 'timeout');
-        stub_state.send_msg_ajax_post_called += 1;
-        server_error_triggered = true;
+    transmit.send_message = function (payload, success, error) {
+        stub_state.send_msg_called += 1;
+        error('Error sending message: Server says 408');
     };
-    var xhr_error_msg_checked = false;
-    channel.xhr_error_message = function (error, xhr) {
-        assert.equal(error, 'Error sending message');
-        assert.equal(xhr, '408');
-        xhr_error_msg_checked = true;
-        return 'Error sending message: Server says 408';
-    };
-    var echo_error_msg_checked = false;
+
+    var echo_error_msg_checked;
+
     echo.message_send_error = function (local_id, error_response) {
         assert.equal(local_id, 1);
         assert.equal(error_response, 'Error sending message: Server says 408');
@@ -430,12 +587,9 @@ people.add(bob);
             local_id_counter: 1,
             get_events_running_called: 1,
             reify_message_id_checked: 0,
-            send_msg_ajax_post_called: 1,
+            send_msg_called: 1,
         };
         assert.deepEqual(stub_state, state);
-        assert(server_error_triggered);
-        assert(!reload_initiate_triggered);
-        assert(xhr_error_msg_checked);
         assert(echo_error_msg_checked);
     }());
 
@@ -448,9 +602,6 @@ people.add(bob);
         $("#sending-indicator").show();
         $("#compose-textarea").select(noop);
         echo_error_msg_checked = false;
-        xhr_error_msg_checked = false;
-        server_error_triggered = false;
-        reload_initiate_triggered = false;
         echo.try_deliver_locally = function () {
             return;
         };
@@ -465,12 +616,9 @@ people.add(bob);
             local_id_counter: 0,
             get_events_running_called: 1,
             reify_message_id_checked: 0,
-            send_msg_ajax_post_called: 1,
+            send_msg_called: 1,
         };
         assert.deepEqual(stub_state, state);
-        assert(server_error_triggered);
-        assert(!reload_initiate_triggered);
-        assert(xhr_error_msg_checked);
         assert(!echo_error_msg_checked);
         assert.equal($("#compose-send-button").prop('disabled'), false);
         assert.equal($('#compose-error-msg').html(),
@@ -485,6 +633,7 @@ people.add(bob);
 
 (function test_enter_with_preview_open() {
     // Test sending a message with content.
+    compose_state.set_message_type('stream');
     $("#compose-textarea").val('message me');
     $("#compose-textarea").hide();
     $("#undo_markdown_preview").show();
@@ -543,7 +692,10 @@ people.add(bob);
         $("#markdown_preview").hide();
         $("#compose-textarea").val('foobarfoobar');
         compose_state.set_message_type('private');
-        compose_state.recipient('bob@example.com');
+        compose_state.recipient = function () {
+            return 'bob@example.com';
+        };
+
         var compose_finished_event_checked = false;
         $.stub_selector(document, {
             trigger: function (e) {
@@ -707,75 +859,6 @@ function test_raw_file_drop(raw_drop_func) {
 
         assert(compose_actions_start_checked);
     }());
-}());
-
-function test_with_mock_socket(test_params) {
-    var socket_send_called;
-    var send_args = {};
-
-    global.socket.send = function (request, success, error) {
-        global.socket.send = undefined;
-        socket_send_called = true;
-
-        // Save off args for check_send_args callback.
-        send_args.request = request;
-        send_args.success = success;
-        send_args.error = error;
-    };
-
-    // Run the actual code here.
-    test_params.run_code();
-
-    assert(socket_send_called);
-    test_params.check_send_args(send_args);
-}
-
-(function test_transmit_message() {
-    page_params.use_websockets = true;
-    global.navigator.userAgent = 'unittest_transmit_message';
-
-    // Our request is mostly unimportant, except that the
-    // socket_user_agent field will be added.
-    var request = {foo: 'bar'};
-
-    var success_func_checked = false;
-    var success = function () {
-        success_func_checked = true;
-    };
-
-    // Our error function gets wrapped, so we set up a real
-    // function to test the wrapping mechanism.
-    var error_func_checked = false;
-    var error = function (error_msg) {
-        assert.equal(error_msg, 'Error sending message: simulated_error');
-        error_func_checked = true;
-    };
-
-    test_with_mock_socket({
-        run_code: function () {
-            compose.transmit_message(request, success, error);
-        },
-        check_send_args: function (send_args) {
-            // The real code patches new data on the request, rather
-            // than making a copy, so we test both that it didn't
-            // clone the object and that it did add a field.
-            assert.equal(send_args.request, request);
-            assert.deepEqual(send_args.request, {
-                foo: 'bar',
-                socket_user_agent: 'unittest_transmit_message',
-            });
-
-            send_args.success({});
-            assert(success_func_checked);
-
-            // Our error function does get wrapped, so we test by
-            // using socket.send's error callback, which should
-            // invoke our test error function via a wrapper
-            // function in the real code.
-            send_args.error('response', {msg: 'simulated_error'});
-            assert(error_func_checked);
-        },
-    });
 }());
 
 (function test_update_fade() {
@@ -1065,10 +1148,14 @@ function test_with_mock_socket(test_params) {
 
     (function test_stream_name_completed_triggered() {
         var handler = $(document).get_on_handler('streamname_completed.zulip');
+        stream_data.add_sub(compose_state.stream_name(), {
+            subscribers: Dict.from_array([1, 2]),
+        });
 
         var data = {
             stream: {
                 name: 'Denmark',
+                subscribers: Dict.from_array([1, 2, 3]),
             },
         };
 
@@ -1080,6 +1167,9 @@ function test_with_mock_socket(test_params) {
         }
 
         test_noop_case(false);
+        // invite_only=true and current compose stream subscribers are a subset
+        // of mentioned_stream subscribers.
+        test_noop_case(true);
 
         $("#compose_private").hide();
         compose_state.set_message_type('stream');
@@ -1110,6 +1200,7 @@ function test_with_mock_socket(test_params) {
            stream: {
                invite_only: true,
                name: 'Denmark',
+               subscribers: Dict.from_array([1]),
            },
         };
 
@@ -1136,6 +1227,8 @@ function test_with_mock_socket(test_params) {
     }());
 
     (function test_video_link_compose_clicked() {
+        page_params.jitsi_server_url = 'https://meet.jit.si';
+
         var syntax_to_insert;
 
         compose_ui.insert_syntax_and_focus = function (syntax) {
@@ -1171,6 +1264,14 @@ function test_with_mock_socket(test_params) {
         function setup_mock_markdown_contains_backend_only_syntax(msg_content, return_val) {
             markdown.contains_backend_only_syntax = function (msg) {
                 assert.equal(msg, msg_content);
+                return return_val;
+            };
+        }
+
+        function setup_mock_markdown_is_status_message(msg_content, msg_rendered, return_val) {
+            markdown.is_status_message = function (content, rendered) {
+                assert.equal(content, msg_content);
+                assert.equal(rendered, msg_rendered);
                 return return_val;
             };
         }
@@ -1232,6 +1333,7 @@ function test_with_mock_socket(test_params) {
         $("#compose-textarea").val('```foobarfoobar```');
         setup_visibilities();
         setup_mock_markdown_contains_backend_only_syntax('```foobarfoobar```', true);
+        setup_mock_markdown_is_status_message('```foobarfoobar```', 'Server: foobarfoobar', false);
         loading.make_indicator = function (spinner) {
             assert.equal(spinner, $("#markdown_preview_spinner"));
             make_indicator_called = true;
@@ -1247,6 +1349,7 @@ function test_with_mock_socket(test_params) {
         $("#compose-textarea").val('foobarfoobar');
         setup_visibilities();
         setup_mock_markdown_contains_backend_only_syntax('foobarfoobar', false);
+        setup_mock_markdown_is_status_message('foobarfoobar', 'Server: foobarfoobar', false);
         mock_channel_post('foobarfoobar');
         markdown.apply_markdown = function (msg) {
             assert.equal(msg.raw_content, 'foobarfoobar');
@@ -1281,7 +1384,7 @@ function test_with_mock_socket(test_params) {
 
 }());
 
-(function test_set_focused_recipient() {
+(function test_create_message_object() {
     var sub = {
         stream_id: 101,
         name: 'social',
@@ -1293,7 +1396,6 @@ function test_with_mock_socket(test_params) {
         '#stream': 'social',
         '#subject': 'lunch',
         '#compose-textarea': 'burrito',
-        '#private_message_recipient': 'alice@example.com,    bob@example.com',
     };
 
     global.$ = function (selector) {
@@ -1321,6 +1423,10 @@ function test_with_mock_socket(test_params) {
     global.compose_state.get_message_type = function () {
         return 'private';
     };
+    compose_state.recipient = function () {
+        return 'alice@example.com,    bob@example.com';
+    };
+
     message = compose.create_message_object();
     assert.deepEqual(message.to, ['alice@example.com', 'bob@example.com']);
     assert.equal(message.to_user_ids, '31,32');

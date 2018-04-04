@@ -213,28 +213,23 @@ exports.activate = function (raw_operators, opts) {
     }
 
     var defer_selecting_closest = message_list.narrowed.empty();
-    message_fetch.load_old_messages({
-        anchor: then_select_id.toFixed(),
-        num_before: 50,
-        num_after: 50,
-        msg_list: message_list.narrowed,
-        use_first_unread_anchor: opts.use_initial_narrow_pointer,
+    message_fetch.load_messages_for_narrow({
+        then_select_id: then_select_id,
+        use_initial_narrow_pointer: opts.use_initial_narrow_pointer,
         cont: function () {
-            message_fetch.reset_load_more_status();
             if (defer_selecting_closest) {
                 maybe_select_closest();
             }
             msg_list.network_time = new Date();
             maybe_report_narrow_time(msg_list);
         },
-        cont_will_add_messages: false,
     });
 
     if (! defer_selecting_closest) {
-        message_fetch.reset_load_more_status();
+        message_scroll.hide_indicators();
         maybe_select_closest();
     } else {
-        ui.show_loading_more_messages_indicator();
+        message_scroll.show_loading_older();
     }
 
     // Put the narrow operators in the URL fragment.
@@ -248,7 +243,7 @@ exports.activate = function (raw_operators, opts) {
     $('#search_query').val(Filter.unparse(operators));
     search.update_button_visibility();
 
-    compose_actions.on_narrow();
+    compose_actions.on_narrow(opts);
 
     var current_filter = narrow_state.get_current_filter();
 
@@ -361,6 +356,33 @@ exports.narrow_to_next_topic = function () {
     exports.activate(filter_expr, opts);
 };
 
+exports.narrow_to_next_pm_string = function () {
+
+    var curr_pm = narrow_state.pm_string();
+
+    var next_pm = topic_generator.get_next_unread_pm_string(curr_pm);
+
+    if (!next_pm) {
+        return;
+    }
+
+    // Hopefully someday we can narrow by user_ids_string instead of
+    // mapping back to emails.
+    var pm_with = people.user_ids_string_to_emails_string(next_pm);
+
+    var filter_expr = [
+        {operator: 'pm-with', operand: pm_with},
+    ];
+
+    // force_close parameter is true to not auto open compose_box
+    var opts = {
+        select_first_unread: true,
+        force_close: true,
+    };
+
+    exports.activate(filter_expr, opts);
+};
+
 
 // Activate narrowing with a single operator.
 // This is just for syntactic convenience.
@@ -415,7 +437,7 @@ exports.deactivate = function () {
     unnarrow_times = {start_time: new Date()};
     blueslip.debug("Unnarrowed");
 
-    if (ui.actively_scrolling()) {
+    if (message_scroll.actively_scrolling()) {
         // There is no way to intercept in-flight scroll events, and they will
         // cause you to end up in the wrong place if you are actively scrolling
         // on an unnarrow. Wait a bit and try again once the scrolling is over.
@@ -435,10 +457,10 @@ exports.deactivate = function () {
     $("#zfilt").removeClass('focused_table');
     $("#zhome").addClass('focused_table');
     current_msg_list = home_msg_list;
-    condense.condense_and_collapse($("#zhome tr.message_row"));
+    condense.condense_and_collapse($("#zhome div.message_row"));
 
     $('#search_query').val('');
-    message_fetch.reset_load_more_status();
+    message_scroll.hide_indicators();
     hashchange.save_narrow();
 
     if (current_msg_list.selected_id() !== -1) {
@@ -535,8 +557,10 @@ function pick_empty_narrow_banner() {
             return $("#no_unread_narrow_message");
         }
     } else if ((first_operator === "stream") && !stream_data.is_subscribed(first_operand)) {
-        // You are narrowed to a stream to which you aren't subscribed.
-        if (!stream_data.get_sub(narrow_state.stream())) {
+        // You are narrowed to a stream which does not exist or is a private stream
+        // in which you were never subscribed.
+        var stream_sub = stream_data.get_sub(narrow_state.stream());
+        if (!stream_sub || stream_sub.invite_only) {
             return $("#nonsubbed_private_nonexistent_stream_narrow_message");
         }
         return $("#nonsubbed_stream_narrow_message");
@@ -590,11 +614,11 @@ exports.by_sender_uri = function (reply_to) {
 };
 
 exports.by_stream_uri = function (stream) {
-    return "#narrow/stream/" + hash_util.encodeHashComponent(stream);
+    return "#narrow/stream/" + hash_util.encode_stream_name(stream);
 };
 
 exports.by_stream_subject_uri = function (stream, subject) {
-    return "#narrow/stream/" + hash_util.encodeHashComponent(stream) +
+    return "#narrow/stream/" + hash_util.encode_stream_name(stream) +
            "/subject/" + hash_util.encodeHashComponent(subject);
 };
 
@@ -614,7 +638,7 @@ exports.by_conversation_and_time_uri = function (message, is_absolute_url) {
     }
     if (message.type === "stream") {
         return absolute_url + "#narrow/stream/" +
-            hash_util.encodeHashComponent(message.stream) +
+            hash_util.encode_stream_name(message.stream) +
             "/subject/" + hash_util.encodeHashComponent(message.subject) +
             "/near/" + hash_util.encodeHashComponent(message.id);
     }

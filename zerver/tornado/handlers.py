@@ -8,18 +8,20 @@ from typing import Any, Callable, Dict, List, Optional
 import tornado.web
 from django import http
 from django.conf import settings
-from django.core import exceptions, signals, urlresolvers
+from django.core import exceptions, signals
+from django.urls import resolvers
 from django.core.exceptions import MiddlewareNotUsed
 from django.core.handlers import base
 from django.core.handlers.exception import convert_exception_to_response
 from django.core.handlers.wsgi import WSGIRequest, get_script_name
-from django.core.urlresolvers import set_script_prefix
+from django.urls import set_script_prefix, set_urlconf
 from django.http import HttpRequest, HttpResponse
 from django.utils.module_loading import import_string
 from tornado.wsgi import WSGIContainer
 
 from zerver.decorator import RespondAsynchronously
 from zerver.lib.response import json_response
+from zerver.lib.types import ViewFuncT
 from zerver.middleware import async_request_restart, async_request_stop
 from zerver.tornado.descriptors import get_descriptor_by_handler_id
 
@@ -108,7 +110,7 @@ class AsyncDjangoHandler(tornado.web.RequestHandler, base.BaseHandler):
         system code doesn't change.
         """
         self._request_middleware = []  # type: Optional[List[Callable[[HttpRequest], HttpResponse]]]
-        self._view_middleware = []  # type: List[Callable[[HttpRequest, Callable[..., HttpResponse], List[str], Dict[str, Any]], Optional[HttpResponse]]]
+        self._view_middleware = []  # type: List[Callable[[HttpRequest, ViewFuncT, List[str], Dict[str, Any]], Optional[HttpResponse]]]
         self._template_response_middleware = []  # type: List[Callable[[HttpRequest, HttpResponse], HttpResponse]]
         self._response_middleware = []  # type: List[Callable[[HttpRequest, HttpResponse], HttpResponse]]
         self._exception_middleware = []  # type: List[Callable[[HttpRequest, Exception], Optional[HttpResponse]]]
@@ -189,8 +191,8 @@ class AsyncDjangoHandler(tornado.web.RequestHandler, base.BaseHandler):
             try:
                 # Setup default url resolver for this thread.
                 urlconf = settings.ROOT_URLCONF
-                urlresolvers.set_urlconf(urlconf)
-                resolver = urlresolvers.RegexURLResolver(r'^/', urlconf)
+                set_urlconf(urlconf)
+                resolver = resolvers.RegexURLResolver(r'^/', urlconf)
 
                 response = None
 
@@ -203,8 +205,8 @@ class AsyncDjangoHandler(tornado.web.RequestHandler, base.BaseHandler):
                 if hasattr(request, "urlconf"):
                     # Reset url resolver with a custom urlconf.
                     urlconf = request.urlconf
-                    urlresolvers.set_urlconf(urlconf)
-                    resolver = urlresolvers.RegexURLResolver(r'^/', urlconf)
+                    set_urlconf(urlconf)
+                    resolver = resolvers.RegexURLResolver(r'^/', urlconf)
 
                 ### ADDED BY ZULIP
                 request._resolver = resolver
@@ -297,7 +299,7 @@ class AsyncDjangoHandler(tornado.web.RequestHandler, base.BaseHandler):
                 return self.handle_uncaught_exception(request, resolver, exc_info)
         finally:
             # Reset urlconf on the way out for isolation
-            urlresolvers.set_urlconf(None)
+            set_urlconf(None)
 
         ### ZULIP CHANGE: The remainder of this function was moved
         ### into its own function, just below, so we can call it from
@@ -308,7 +310,7 @@ class AsyncDjangoHandler(tornado.web.RequestHandler, base.BaseHandler):
 
     ### Copied from get_response (above in this file)
     def apply_response_middleware(self, request: HttpRequest, response: HttpResponse,
-                                  resolver: urlresolvers.RegexURLResolver) -> HttpResponse:
+                                  resolver: resolvers.RegexURLResolver) -> HttpResponse:
         try:
             # Apply response middleware, regardless of the response
             for middleware_method in self._response_middleware:

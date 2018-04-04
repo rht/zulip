@@ -9,23 +9,23 @@ import markdown.extensions.toc
 import markdown_include.include
 from django.conf import settings
 from django.template import Library, engines, loader
-from django.utils.lru_cache import lru_cache
 from django.utils.safestring import mark_safe
 
 import zerver.lib.bugdown.fenced_code
+import zerver.lib.bugdown.api_arguments_table_generator
+import zerver.lib.bugdown.api_code_examples
+from zerver.lib.cache import ignore_unhashable_lru_cache
 
 register = Library()
 
-def and_n_others(values, limit):
-    # type: (List[str], int) -> str
+def and_n_others(values: List[str], limit: int) -> str:
     # A helper for the commonly appended "and N other(s)" string, with
     # the appropriate pluralization.
     return " and %d other%s" % (len(values) - limit,
                                 "" if len(values) == limit + 1 else "s")
 
 @register.filter(name='display_list', is_safe=True)
-def display_list(values, display_limit):
-    # type: (List[str], int) -> str
+def display_list(values: List[str], display_limit: int) -> str:
     """
     Given a list of values, return a string nicely formatting those values,
     summarizing when you have more than `display_limit`. Eg, for a
@@ -63,9 +63,12 @@ docs_without_macros = [
     "webhook-walkthrough.md",
 ]
 
+# Much of the time, render_markdown_path is called with hashable
+# arguments, so this decorator is effective even though it only caches
+# the results when called if none of the arguments are unhashable.
+@ignore_unhashable_lru_cache(512)
 @register.filter(name='render_markdown_path', is_safe=True)
-def render_markdown_path(markdown_file_path, context=None):
-    # type: (str, Optional[Dict[Any, Any]]) -> str
+def render_markdown_path(markdown_file_path: str, context: Optional[Dict[Any, Any]]=None) -> str:
     """Given a path to a markdown file, return the rendered html.
 
     Note that this assumes that any HTML in the markdown file is
@@ -83,6 +86,9 @@ def render_markdown_path(markdown_file_path, context=None):
                 guess_lang=False
             ),
             zerver.lib.bugdown.fenced_code.makeExtension(),
+            zerver.lib.bugdown.api_arguments_table_generator.makeExtension(
+                base_path='templates/zerver/api/'),
+            zerver.lib.bugdown.api_code_examples.makeExtension(),
         ]
     if md_macro_extension is None:
         md_macro_extension = markdown_include.include.makeExtension(

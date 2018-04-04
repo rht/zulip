@@ -16,12 +16,25 @@ from zerver.lib.actions import (
     get_active_presence_idle_user_ids,
     get_user_info_for_message_updates,
     internal_send_private_message,
+    check_message,
+    check_send_stream_message,
+    do_deactivate_user,
+    do_set_realm_property,
+    extract_recipients,
+    do_create_user,
+    get_client,
+    do_add_alert_words,
+    do_change_stream_invite_only,
 )
 
 from zerver.lib.message import (
     MessageDict,
     messages_for_ids,
     sew_messages_and_reactions,
+    get_first_visible_message_id,
+    update_first_visible_message_id,
+    maybe_update_first_visible_message_id,
+    get_raw_unread_data,
 )
 
 from zerver.lib.test_helpers import (
@@ -45,21 +58,13 @@ from zerver.models import (
     Message, Realm, Recipient, Stream, UserMessage, UserProfile, Attachment,
     RealmAuditLog, RealmDomain, get_realm, UserPresence, Subscription,
     get_stream, get_stream_recipient, get_system_bot, get_user, Reaction,
-    flush_per_request_caches
+    flush_per_request_caches, ScheduledMessage
 )
 
-from zerver.lib.actions import (
-    check_message,
-    check_send_stream_message,
-    do_deactivate_user,
-    do_set_realm_property,
-    extract_recipients,
-    do_create_user,
-    get_client,
-    do_add_alert_words,
-)
 
 from zerver.lib.upload import create_attachment
+from zerver.lib.timestamp import convert_to_UTC
+from zerver.lib.timezone import get_timezone
 
 from zerver.views.messages import create_mirrored_message_users
 
@@ -84,6 +89,7 @@ class TopicHistoryTest(ZulipTestCase):
         recipient = get_stream_recipient(stream.id)
 
         def create_test_message(topic: str) -> int:
+            # TODO: Clean this up to send messages the normal way.
 
             hamlet = self.example_user('hamlet')
             message = Message.objects.create(
@@ -140,6 +146,46 @@ class TopicHistoryTest(ZulipTestCase):
             topic1_msg_id,
             topic2_msg_id,
         ])
+
+        # Now try as cordelia, who we imagine as a totally new user in
+        # that she doesn't have UserMessage rows.  We should see the
+        # same results for a public stream.
+        self.login(self.example_email("cordelia"))
+        result = self.client_get(endpoint, dict())
+        self.assert_json_success(result)
+        history = result.json()['topics']
+
+        # We only look at the most recent three topics, because
+        # the prior fixture data may be unreliable.
+        history = history[:3]
+
+        self.assertEqual([topic['name'] for topic in history], [
+            'topic0',
+            'topic1',
+            'topic2',
+        ])
+        self.assertIn('topic0', [topic['name'] for topic in history])
+
+        self.assertEqual([topic['max_id'] for topic in history], [
+            topic0_msg_id,
+            topic1_msg_id,
+            topic2_msg_id,
+        ])
+
+        # Now make stream private, but subscribe cordelia
+        do_change_stream_invite_only(stream, True)
+        self.subscribe(self.example_user("cordelia"), stream.name)
+
+        result = self.client_get(endpoint, dict())
+        self.assert_json_success(result)
+        history = result.json()['topics']
+        history = history[:3]
+
+        # Cordelia doesn't have these recent history items when we
+        # wasn't subscribed in her results.
+        self.assertNotIn('topic0', [topic['name'] for topic in history])
+        self.assertNotIn('topic1', [topic['name'] for topic in history])
+        self.assertNotIn('topic2', [topic['name'] for topic in history])
 
     def test_bad_stream_id(self) -> None:
         email = self.example_email("iago")
@@ -265,7 +311,7 @@ class TestCrossRealmPMs(ZulipTestCase):
         with assert_invalid_email():
             self.send_huddle_message(feedback_email, [user1_email, user2_email])
 
-        # Users on the different realms can not PM each other
+        # Users on the different realms cannot PM each other
         with assert_invalid_email():
             self.send_personal_message(user1_email, user2_email, sender_realm="1.example.com")
 
@@ -273,7 +319,7 @@ class TestCrossRealmPMs(ZulipTestCase):
         with assert_invalid_email():
             self.send_personal_message(user1_email, "hamlet@zulip.com", sender_realm="1.example.com")
 
-        # Users on three different realms can not PM each other
+        # Users on three different realms cannot PM each other
         with assert_invalid_email():
             self.send_huddle_message(user1_email, [user2_email, user3_email],
                                      sender_realm="1.example.com")
@@ -709,6 +755,31 @@ class StreamMessagesTest(ZulipTestCase):
         self.assert_stream_message(non_ascii_stream_name, topic_name=u"hümbüǵ",
                                    content=u"hümbüǵ")
 
+    def test_get_raw_unread_data_for_huddle_messages(self) -> None:
+        users = [
+            self.example_user('hamlet'),
+            self.example_user('cordelia'),
+            self.example_user('iago'),
+            self.example_user('prospero'),
+            self.example_user('othello'),
+        ]
+
+        message1_id = self.send_huddle_message(users[0].email,
+                                               [user.email for user in users],
+                                               "test content 1")
+        message2_id = self.send_huddle_message(users[0].email,
+                                               [user.email for user in users],
+                                               "test content 2")
+
+        msg_data = get_raw_unread_data(users[1])
+
+        # both the messages are present in msg_data
+        self.assertIn(message1_id, msg_data["huddle_dict"].keys())
+        self.assertIn(message2_id, msg_data["huddle_dict"].keys())
+
+        # only these two messages are present in msg_data
+        self.assertEqual(len(msg_data["huddle_dict"].keys()), 2)
+
 class MessageDictTest(ZulipTestCase):
     @slow('builds lots of messages')
     def test_bulk_message_fetching(self) -> None:
@@ -1046,6 +1117,52 @@ class MessagePOSTTest(ZulipTestCase):
                                                      "to": self.example_email("othello")})
         self.assert_json_error(result, "Message must not be empty")
 
+    def test_empty_string_topic(self) -> None:
+        """
+        Sending a message that has empty string topic should fail
+        """
+        self.login(self.example_email("hamlet"))
+        result = self.client_post("/json/messages", {"type": "stream",
+                                                     "to": "Verona",
+                                                     "client": "test suite",
+                                                     "content": "Test message",
+                                                     "subject": ""})
+        self.assert_json_error(result, "Topic can't be empty")
+
+    def test_missing_topic(self) -> None:
+        """
+        Sending a message without topic should fail
+        """
+        self.login(self.example_email("hamlet"))
+        result = self.client_post("/json/messages", {"type": "stream",
+                                                     "to": "Verona",
+                                                     "client": "test suite",
+                                                     "content": "Test message"})
+        self.assert_json_error(result, "Missing topic")
+
+    def test_invalid_message_type(self) -> None:
+        """
+        Messages other than the type of "private" or "stream" are considered as invalid
+        """
+        self.login(self.example_email("hamlet"))
+        result = self.client_post("/json/messages", {"type": "invalid",
+                                                     "to": "Verona",
+                                                     "client": "test suite",
+                                                     "content": "Test message",
+                                                     "subject": "Test subject"})
+        self.assert_json_error(result, "Invalid message type")
+
+    def test_private_message_without_recipients(self) -> None:
+        """
+        Sending private message without recipients should fail
+        """
+        self.login(self.example_email("hamlet"))
+        result = self.client_post("/json/messages", {"type": "private",
+                                                     "content": "Test content",
+                                                     "client": "test suite",
+                                                     "to": ""})
+        self.assert_json_error(result, "Message must have recipients")
+
     def test_mirrored_huddle(self) -> None:
         """
         Sending a mirrored huddle message works
@@ -1197,7 +1314,7 @@ class MessagePOSTTest(ZulipTestCase):
                                                      "realm_str": "non-existing"})
         user.is_api_super_user = False
         user.save()
-        self.assert_json_error(result, "Unknown realm non-existing")
+        self.assert_json_error(result, "Unknown organization 'non-existing'")
 
     def test_send_message_when_sender_is_not_set(self) -> None:
         self.login(self.mit_email("starnine"), realm=get_realm("zephyr"))
@@ -1246,7 +1363,7 @@ class MessagePOSTTest(ZulipTestCase):
                                                      "client": "zephyr_mirror",
                                                      "to": email},
                                   subdomain="notzephyr")
-        self.assert_json_error(result, "Invalid mirrored realm")
+        self.assert_json_error(result, "Zephyr mirroring is not allowed in this organization")
 
     def test_send_message_irc_mirror(self) -> None:
         self.login(self.example_email('hamlet'))
@@ -1271,6 +1388,130 @@ class MessagePOSTTest(ZulipTestCase):
                                                            "subject": "from irc",
                                                            "to": "IRCLand"})
         self.assert_json_success(result)
+
+class ScheduledMessageTest(ZulipTestCase):
+
+    def last_scheduled_message(self) -> ScheduledMessage:
+        return ScheduledMessage.objects.all().order_by('-id')[0]
+
+    def do_schedule_message(self, msg_type: str, to: str, msg: str,
+                            defer_until: str='', tz_guess: str='',
+                            delivery_type: str='send_later',
+                            realm_str: str='zulip') -> HttpResponse:
+        self.login(self.example_email("hamlet"))
+
+        subject = ''
+        if msg_type == 'stream':
+            subject = 'Test subject'
+
+        payload = {"type": msg_type,
+                   "to": to,
+                   "client": "test suite",
+                   "content": msg,
+                   "subject": subject,
+                   "realm_str": realm_str,
+                   "delivery_type": delivery_type,
+                   "tz_guess": tz_guess}
+        if defer_until:
+            payload["deliver_at"] = defer_until
+
+        result = self.client_post("/json/messages", payload)
+        return result
+
+    def test_schedule_message(self) -> None:
+        content = "Test message"
+        defer_until = timezone_now().replace(tzinfo=None) + datetime.timedelta(days=1)
+        defer_until_str = str(defer_until)
+
+        # Scheduling a message to a stream you are subscribed is successful.
+        result = self.do_schedule_message('stream', 'Verona',
+                                          content + ' 1', defer_until_str)
+        message = self.last_scheduled_message()
+        self.assert_json_success(result)
+        self.assertEqual(message.content, 'Test message 1')
+        self.assertEqual(message.scheduled_timestamp, convert_to_UTC(defer_until))
+        self.assertEqual(message.delivery_type, ScheduledMessage.SEND_LATER)
+        # Scheduling a message for reminders.
+        result = self.do_schedule_message('stream', 'Verona',
+                                          content + ' 2', defer_until_str,
+                                          delivery_type='remind')
+        message = self.last_scheduled_message()
+        self.assert_json_success(result)
+        self.assertEqual(message.delivery_type, ScheduledMessage.REMIND)
+
+        # Scheduling a private message is successful.
+        result = self.do_schedule_message('private', self.example_email("othello"),
+                                          content + ' 3', defer_until_str)
+        message = self.last_scheduled_message()
+        self.assert_json_success(result)
+        self.assertEqual(message.content, 'Test message 3')
+        self.assertEqual(message.scheduled_timestamp, convert_to_UTC(defer_until))
+        self.assertEqual(message.delivery_type, ScheduledMessage.SEND_LATER)
+
+        result = self.do_schedule_message('private', self.example_email("othello"),
+                                          content + ' 4', defer_until_str,
+                                          delivery_type='remind')
+        message = self.last_scheduled_message()
+        self.assert_json_success(result)
+        self.assertEqual(message.delivery_type, ScheduledMessage.REMIND)
+
+        # Scheduling a message while guessing timezone.
+        tz_guess = 'Asia/Kolkata'
+        result = self.do_schedule_message('stream', 'Verona', content + ' 5',
+                                          defer_until_str, tz_guess=tz_guess)
+        message = self.last_scheduled_message()
+        self.assert_json_success(result)
+        self.assertEqual(message.content, 'Test message 5')
+        local_tz = get_timezone(tz_guess)
+        # Since mypy is not able to recognize localize and normalize as attributes of tzinfo we use ignore.
+        utz_defer_until = local_tz.normalize(local_tz.localize(defer_until))  # type: ignore # Reason in comment on previous line.
+        self.assertEqual(message.scheduled_timestamp,
+                         convert_to_UTC(utz_defer_until))
+        self.assertEqual(message.delivery_type, ScheduledMessage.SEND_LATER)
+
+        # Test with users timezone setting as set to some timezone rather than
+        # empty. This will help interpret timestamp in users local timezone.
+        user = self.example_user("hamlet")
+        user.timezone = 'US/Pacific'
+        user.save(update_fields=['timezone'])
+        result = self.do_schedule_message('stream', 'Verona',
+                                          content + ' 6', defer_until_str)
+        message = self.last_scheduled_message()
+        self.assert_json_success(result)
+        self.assertEqual(message.content, 'Test message 6')
+        local_tz = get_timezone(user.timezone)
+        # Since mypy is not able to recognize localize and normalize as attributes of tzinfo we use ignore.
+        utz_defer_until = local_tz.normalize(local_tz.localize(defer_until))  # type: ignore # Reason in comment on previous line.
+        self.assertEqual(message.scheduled_timestamp,
+                         convert_to_UTC(utz_defer_until))
+        self.assertEqual(message.delivery_type, ScheduledMessage.SEND_LATER)
+
+    def test_scheduling_in_past(self) -> None:
+        # Scheduling a message in past should fail.
+        content = "Test message"
+        defer_until = timezone_now()
+        defer_until_str = str(defer_until)
+
+        result = self.do_schedule_message('stream', 'Verona',
+                                          content + ' 1', defer_until_str)
+        self.assert_json_error(result, 'Invalid timestamp for scheduling message. Choose a time in future.')
+
+    def test_invalid_timestamp(self) -> None:
+        # Scheduling a message from which timestamp couldn't be parsed
+        # successfully should fail.
+        content = "Test message"
+        defer_until = 'Missed the timestamp'
+
+        result = self.do_schedule_message('stream', 'Verona',
+                                          content + ' 1', defer_until)
+        self.assert_json_error(result, 'Invalid timestamp for scheduling message.')
+
+    def test_missing_deliver_at(self) -> None:
+        content = "Test message"
+
+        result = self.do_schedule_message('stream', 'Verona',
+                                          content + ' 1')
+        self.assert_json_error(result, 'Missing deliver_at in a request for delayed message delivery')
 
 class EditMessageTest(ZulipTestCase):
     def check_message(self, msg_id: int, subject: Optional[Text]=None,
@@ -1668,10 +1909,12 @@ class EditMessageTest(ZulipTestCase):
 
     def test_edit_message_content_limit(self) -> None:
         def set_message_editing_params(allow_message_editing: bool,
-                                       message_content_edit_limit_seconds: int) -> None:
+                                       message_content_edit_limit_seconds: int,
+                                       allow_community_topic_editing: bool) -> None:
             result = self.client_patch("/json/realm", {
                 'allow_message_editing': ujson.dumps(allow_message_editing),
-                'message_content_edit_limit_seconds': message_content_edit_limit_seconds
+                'message_content_edit_limit_seconds': message_content_edit_limit_seconds,
+                'allow_community_topic_editing': ujson.dumps(allow_community_topic_editing),
             })
             self.assert_json_success(result)
 
@@ -1713,25 +1956,93 @@ class EditMessageTest(ZulipTestCase):
 
         # test the various possible message editing settings
         # high enough time limit, all edits allowed
-        set_message_editing_params(True, 240)
+        set_message_editing_params(True, 240, False)
         do_edit_message_assert_success(id_, 'A')
 
         # out of time, only topic editing allowed
-        set_message_editing_params(True, 120)
+        set_message_editing_params(True, 120, False)
         do_edit_message_assert_success(id_, 'B', True)
         do_edit_message_assert_error(id_, 'C', "The time limit for editing this message has past")
 
         # infinite time, all edits allowed
-        set_message_editing_params(True, 0)
+        set_message_editing_params(True, 0, False)
         do_edit_message_assert_success(id_, 'D')
 
         # without allow_message_editing, nothing is allowed
-        set_message_editing_params(False, 240)
+        set_message_editing_params(False, 240, False)
         do_edit_message_assert_error(id_, 'E', "Your organization has turned off message editing", True)
-        set_message_editing_params(False, 120)
+        set_message_editing_params(False, 120, False)
         do_edit_message_assert_error(id_, 'F', "Your organization has turned off message editing", True)
-        set_message_editing_params(False, 0)
+        set_message_editing_params(False, 0, False)
         do_edit_message_assert_error(id_, 'G', "Your organization has turned off message editing", True)
+
+    def test_allow_community_topic_editing(self) -> None:
+        def set_message_editing_params(allow_message_editing,
+                                       message_content_edit_limit_seconds,
+                                       allow_community_topic_editing):
+            # type: (bool, int, bool) -> None
+            result = self.client_patch("/json/realm", {
+                'allow_message_editing': ujson.dumps(allow_message_editing),
+                'message_content_edit_limit_seconds': message_content_edit_limit_seconds,
+                'allow_community_topic_editing': ujson.dumps(allow_community_topic_editing),
+            })
+            self.assert_json_success(result)
+
+        def do_edit_message_assert_success(id_, unique_str):
+            # type: (int, Text) -> None
+            new_subject = 'subject' + unique_str
+            params_dict = {'message_id': id_, 'subject': new_subject}
+            result = self.client_patch("/json/messages/" + str(id_), params_dict)
+            self.assert_json_success(result)
+            self.check_message(id_, subject=new_subject)
+
+        def do_edit_message_assert_error(id_, unique_str, error):
+            # type: (int, Text, Text) -> None
+            message = Message.objects.get(id=id_)
+            old_subject = message.topic_name()
+            old_content = message.content
+            new_subject = 'subject' + unique_str
+            params_dict = {'message_id': id_, 'subject': new_subject}
+            result = self.client_patch("/json/messages/" + str(id_), params_dict)
+            message = Message.objects.get(id=id_)
+            self.assert_json_error(result, error)
+            self.check_message(id_, subject=old_subject, content=old_content)
+
+        self.login(self.example_email("iago"))
+        # send a message in the past
+        id_ = self.send_stream_message(self.example_email("hamlet"), "Scotland",
+                                       content="content", topic_name="subject")
+        message = Message.objects.get(id=id_)
+        message.pub_date = message.pub_date - datetime.timedelta(seconds=180)
+        message.save()
+
+        # any user can edit the topic of a message
+        set_message_editing_params(True, 0, True)
+        # log in as a new user
+        self.login(self.example_email("cordelia"))
+        do_edit_message_assert_success(id_, 'A')
+
+        # only admins can edit the topics of messages
+        self.login(self.example_email("iago"))
+        set_message_editing_params(True, 0, False)
+        do_edit_message_assert_success(id_, 'B')
+        self.login(self.example_email("cordelia"))
+        do_edit_message_assert_error(id_, 'C', "You don't have permission to edit this message")
+
+        # users cannot edit topics if allow_message_editing is False
+        self.login(self.example_email("iago"))
+        set_message_editing_params(False, 0, True)
+        self.login(self.example_email("cordelia"))
+        do_edit_message_assert_error(id_, 'D', "Your organization has turned off message editing")
+
+        # non-admin users cannot edit topics sent > 24 hrs ago
+        message.pub_date = message.pub_date - datetime.timedelta(seconds=90000)
+        message.save()
+        self.login(self.example_email("iago"))
+        set_message_editing_params(True, 0, True)
+        do_edit_message_assert_success(id_, 'E')
+        self.login(self.example_email("cordelia"))
+        do_edit_message_assert_error(id_, 'F', "The time limit for editing this message has past")
 
     def test_propagate_topic_forward(self) -> None:
         self.login(self.example_email("hamlet"))
@@ -2731,3 +3042,54 @@ class MessageHydrationTest(ZulipTestCase):
 
         self.assertIn('class="user-mention"', new_message['content'])
         self.assertEqual(new_message['flags'], ['mentioned'])
+
+class MessageVisibilityTest(ZulipTestCase):
+    def test_update_first_visible_message_id(self) -> None:
+        Message.objects.all().delete()
+        message_ids = [self.send_stream_message(self.example_email("othello"), "Scotland") for i in range(15)]
+
+        realm = get_realm("zulip")
+        realm.message_visibility_limit = 10
+        realm.save()
+        expected_message_id = message_ids[5]
+        update_first_visible_message_id(realm)
+        self.assertEqual(get_first_visible_message_id(realm), expected_message_id)
+
+        # If the message_visibility_limit is greater than number of messages
+        # get_first_visible_message_id should return 0
+        message_visibility_limit = 50
+        realm.message_visibility_limit = message_visibility_limit
+        realm.save()
+        update_first_visible_message_id(realm)
+        self.assertEqual(get_first_visible_message_id(realm), 0)
+
+    def test_maybe_update_first_visible_message_id(self) -> None:
+        realm = get_realm("zulip")
+        lookback_hours = 30
+
+        realm.message_visibility_limit = None
+        realm.save()
+        with mock.patch('zerver.lib.message.estimate_recent_messages', return_value=1), \
+                mock.patch("zerver.lib.message.update_first_visible_message_id") as m:
+            maybe_update_first_visible_message_id(realm, lookback_hours)
+        m.assert_not_called()
+
+        realm.message_visibility_limit = 10
+        realm.save()
+        with mock.patch('zerver.lib.message.estimate_recent_messages', return_value=0), \
+                mock.patch("zerver.lib.message.update_first_visible_message_id") as m:
+            maybe_update_first_visible_message_id(realm, lookback_hours)
+        # Cache got cleared when the value of message_visibility_limit was updated
+        m.assert_called_once_with(realm)
+
+        with mock.patch('zerver.lib.message.estimate_recent_messages', return_value=0), \
+                mock.patch('zerver.lib.message.cache_get', return_value=True), \
+                mock.patch("zerver.lib.message.update_first_visible_message_id") as m:
+            maybe_update_first_visible_message_id(realm, lookback_hours)
+        m.assert_not_called()
+
+        with mock.patch('zerver.lib.message.estimate_recent_messages', return_value=1), \
+                mock.patch('zerver.lib.message.cache_get', return_value=True), \
+                mock.patch("zerver.lib.message.update_first_visible_message_id") as m:
+            maybe_update_first_visible_message_id(realm, lookback_hours)
+        m.assert_called_once_with(realm)

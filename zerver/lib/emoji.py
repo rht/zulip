@@ -14,6 +14,34 @@ from zerver.models import Reaction, Realm, RealmEmoji, UserProfile
 NAME_TO_CODEPOINT_PATH = os.path.join(settings.STATIC_ROOT, "generated", "emoji", "name_to_codepoint.json")
 CODEPOINT_TO_NAME_PATH = os.path.join(settings.STATIC_ROOT, "generated", "emoji", "codepoint_to_name.json")
 
+# Emoticons and which emoji they should become. Duplicate emoji are allowed.
+# Changes here should be mimicked in `static/js/emoji.js`
+# and `templates/zerver/help/enable-emoticon-translations.md`.
+EMOTICON_CONVERSIONS = {
+    ':)': ':smiley:',
+    '(:': ':smiley:',
+    ':(': ':slightly_frowning_face:',
+    '<3': ':heart:',
+    ':|': ':expressionless:',
+    ':/': ':confused:',
+}
+
+possible_emoticons = EMOTICON_CONVERSIONS.keys()
+possible_emoticon_regexes = map(re.escape, possible_emoticons)  # type: ignore # AnyStr/str issues
+terminal_symbols = ',.;?!()\\[\\] "\'\\n\\t'  # type: str # from composebox_typeahead.js
+emoticon_regex = ('(?<![^{0}])(?P<emoticon>('.format(terminal_symbols)
+                  + ')|('.join(possible_emoticon_regexes)  # type: ignore # AnyStr/str issues
+                  + '))(?![^{0}])'.format(terminal_symbols))
+
+# Translates emoticons to their colon syntax, e.g. `:smiley:`.
+def translate_emoticons(text: Text) -> Text:
+    translated = text
+
+    for emoticon in EMOTICON_CONVERSIONS:
+        translated = re.sub(re.escape(emoticon), EMOTICON_CONVERSIONS[emoticon], translated)
+
+    return translated
+
 with open(NAME_TO_CODEPOINT_PATH) as fp:
     name_to_codepoint = ujson.load(fp)
 
@@ -21,9 +49,10 @@ with open(CODEPOINT_TO_NAME_PATH) as fp:
     codepoint_to_name = ujson.load(fp)
 
 def emoji_name_to_emoji_code(realm: Realm, emoji_name: Text) -> Tuple[Text, Text]:
-    realm_emojis = realm.get_emoji()
-    if emoji_name in realm_emojis and not realm_emojis[emoji_name]['deactivated']:
-        return emoji_name, Reaction.REALM_EMOJI
+    realm_emojis = realm.get_active_emoji()
+    realm_emoji = realm_emojis.get(emoji_name)
+    if realm_emoji is not None:
+        return str(realm_emojis[emoji_name]['id']), Reaction.REALM_EMOJI
     if emoji_name == 'zulip':
         return emoji_name, Reaction.ZULIP_EXTRA_EMOJI
     if emoji_name in name_to_codepoint:
@@ -39,20 +68,21 @@ def check_emoji_request(realm: Realm, emoji_name: str, emoji_code: str,
     # code is valid for new reactions, or not.
     if emoji_type == "realm_emoji":
         realm_emojis = realm.get_emoji()
-        if emoji_code not in realm_emojis:
-            raise JsonableError(_("No such realm emoji found."))
-        if realm_emojis[emoji_code]["deactivated"]:
-            raise JsonableError(_("This realm emoji has been deactivated."))
-        if emoji_name != emoji_code:
-            raise JsonableError(_("Invalid emoji name."))
+        realm_emoji = realm_emojis.get(emoji_code)
+        if realm_emoji is None:
+            raise JsonableError(_("Invalid custom emoji."))
+        if realm_emoji["name"] != emoji_name:
+            raise JsonableError(_("Invalid custom emoji name."))
+        if realm_emoji["deactivated"]:
+            raise JsonableError(_("This custom emoji has been deactivated."))
     elif emoji_type == "zulip_extra_emoji":
         if emoji_code not in ["zulip"]:
-            raise JsonableError(_("No such extra emoji found."))
+            raise JsonableError(_("Invalid emoji code."))
         if emoji_name != emoji_code:
             raise JsonableError(_("Invalid emoji name."))
     elif emoji_type == "unicode_emoji":
         if emoji_code not in codepoint_to_name:
-            raise JsonableError(_("No unicode emoji with this emoji code found."))
+            raise JsonableError(_("Invalid emoji code."))
         if name_to_codepoint.get(emoji_name) != emoji_code:
             raise JsonableError(_("Invalid emoji name."))
     else:
@@ -67,19 +97,21 @@ def check_emoji_admin(user_profile: UserProfile, emoji_name: Optional[Text]=None
     if user_profile.is_realm_admin:
         return
     if user_profile.realm.add_emoji_by_admins_only:
-        raise JsonableError(_("Must be a realm administrator"))
+        raise JsonableError(_("Must be an organization administrator"))
 
     # Otherwise, normal users can add emoji
     if emoji_name is None:
         return
 
     # Additionally, normal users can remove emoji they themselves added
-    emoji = RealmEmoji.objects.filter(name=emoji_name).first()
+    emoji = RealmEmoji.objects.filter(realm=user_profile.realm,
+                                      name=emoji_name,
+                                      deactivated=False).first()
     current_user_is_author = (emoji is not None and
                               emoji.author is not None and
                               emoji.author.id == user_profile.id)
     if not user_profile.is_realm_admin and not current_user_is_author:
-        raise JsonableError(_("Must be a realm administrator or emoji author"))
+        raise JsonableError(_("Must be an organization administrator or emoji author"))
 
 def check_valid_emoji_name(emoji_name: Text) -> None:
     if re.match('^[0-9a-z.\-_]+(?<![.\-_])$', emoji_name):
@@ -90,6 +122,6 @@ def get_emoji_url(emoji_file_name: Text, realm_id: int) -> Text:
     return upload_backend.get_emoji_url(emoji_file_name, realm_id)
 
 
-def get_emoji_file_name(emoji_file_name: Text, emoji_name: Text) -> Text:
+def get_emoji_file_name(emoji_file_name: Text, emoji_id: int) -> Text:
     _, image_ext = os.path.splitext(emoji_file_name)
-    return ''.join((emoji_name, image_ext))
+    return ''.join((str(emoji_id), image_ext))

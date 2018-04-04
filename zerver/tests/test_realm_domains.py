@@ -10,7 +10,7 @@ from zerver.lib.actions import do_change_is_admin, \
 from zerver.lib.domains import validate_domain
 from zerver.lib.test_classes import ZulipTestCase
 from zerver.models import email_allowed_for_realm, get_realm, \
-    GetRealmByDomainException, RealmDomain
+    RealmDomain, DomainNotAllowedForRealmError
 
 import ujson
 
@@ -31,11 +31,11 @@ class RealmDomainTest(ZulipTestCase):
     def test_not_realm_admin(self) -> None:
         self.login(self.example_email("hamlet"))
         result = self.client_post("/json/realm/domains")
-        self.assert_json_error(result, 'Must be a realm administrator')
+        self.assert_json_error(result, 'Must be an organization administrator')
         result = self.client_patch("/json/realm/domains/15")
-        self.assert_json_error(result, 'Must be a realm administrator')
+        self.assert_json_error(result, 'Must be an organization administrator')
         result = self.client_delete("/json/realm/domains/15")
-        self.assert_json_error(result, 'Must be a realm administrator')
+        self.assert_json_error(result, 'Must be an organization administrator')
 
     def test_create_realm_domain(self) -> None:
         self.login(self.example_email("iago"))
@@ -116,16 +116,19 @@ class RealmDomainTest(ZulipTestCase):
         realm_domain = RealmDomain.objects.create(realm=realm1, domain='test1.com', allow_subdomains=False)
         RealmDomain.objects.create(realm=realm2, domain='test2.test1.com', allow_subdomains=True)
 
-        self.assertEqual(email_allowed_for_realm('user@test1.com', realm1), True)
-        self.assertEqual(email_allowed_for_realm('user@test2.test1.com', realm1), False)
-        self.assertEqual(email_allowed_for_realm('user@test2.test1.com', realm2), True)
-        self.assertEqual(email_allowed_for_realm('user@test3.test2.test1.com', realm2), True)
-        self.assertEqual(email_allowed_for_realm('user@test3.test1.com', realm2), False)
+        email_allowed_for_realm('user@test1.com', realm1)
+        with self.assertRaises(DomainNotAllowedForRealmError):
+            email_allowed_for_realm('user@test2.test1.com', realm1)
+        email_allowed_for_realm('user@test2.test1.com', realm2)
+        email_allowed_for_realm('user@test3.test2.test1.com', realm2)
+        with self.assertRaises(DomainNotAllowedForRealmError):
+            email_allowed_for_realm('user@test3.test1.com', realm2)
 
         do_change_realm_domain(realm_domain, True)
-        self.assertEqual(email_allowed_for_realm('user@test1.com', realm1), True)
-        self.assertEqual(email_allowed_for_realm('user@test2.test1.com', realm1), True)
-        self.assertEqual(email_allowed_for_realm('user@test2.com', realm1), False)
+        email_allowed_for_realm('user@test1.com', realm1)
+        email_allowed_for_realm('user@test2.test1.com', realm1)
+        with self.assertRaises(DomainNotAllowedForRealmError):
+            email_allowed_for_realm('user@test2.com', realm1)
 
     def test_realm_realm_domains_uniqueness(self) -> None:
         realm = get_realm('zulip')

@@ -4,7 +4,7 @@ from typing import Any, List, Dict, Mapping, Optional, Text
 from django.utils.translation import ugettext as _
 from django.conf import settings
 from django.contrib.auth import authenticate, get_backends
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.http import HttpResponseRedirect, HttpResponseForbidden, HttpResponse, HttpRequest
 from django.shortcuts import redirect, render
 from django.template import RequestContext, loader
@@ -14,7 +14,8 @@ from django.core import validators
 from zerver.context_processors import get_realm_from_request
 from zerver.models import UserProfile, Realm, Stream, MultiuseInvite, \
     name_changes_disabled, email_to_username, email_allowed_for_realm, \
-    get_realm, get_user, get_default_stream_groups
+    get_realm, get_user, get_default_stream_groups, DisposableEmailError, \
+    DomainNotAllowedForRealmError
 from zerver.lib.send_email import send_email, FromAddress
 from zerver.lib.events import do_events_register
 from zerver.lib.actions import do_change_password, do_change_full_name, do_change_is_admin, \
@@ -27,7 +28,7 @@ from django_auth_ldap.backend import LDAPBackend, _LDAPUser
 from zerver.decorator import require_post, has_request_variables, \
     JsonableError, REQ, do_login
 from zerver.lib.onboarding import setup_initial_streams, \
-    send_initial_realm_messages
+    send_initial_realm_messages, setup_realm_internal_bots
 from zerver.lib.response import json_success
 from zerver.lib.subdomains import get_subdomain, is_root_domain_available
 from zerver.lib.timezone import get_all_timezones
@@ -37,7 +38,7 @@ from zerver.views.auth import create_preregistration_user, \
 from zproject.backends import ldap_auth_enabled, password_auth_enabled, ZulipLDAPAuthBackend
 
 from confirmation.models import Confirmation, RealmCreationKey, ConfirmationKeyException, \
-    check_key_is_valid, create_confirmation_link, get_object_from_key, \
+    validate_key, create_confirmation_link, get_object_from_key, \
     render_confirmation_key_error
 
 import logging
@@ -87,9 +88,14 @@ def accounts_register(request: HttpRequest) -> HttpResponse:
             return render_confirmation_key_error(
                 request, ConfirmationKeyException(ConfirmationKeyException.DOES_NOT_EXIST))
 
-        if not email_allowed_for_realm(email, realm):
-            return render(request, "zerver/closed_realm.html",
-                          context={"closed_domain_name": realm.name})
+        try:
+            email_allowed_for_realm(email, realm)
+        except DomainNotAllowedForRealmError:
+            return render(request, "zerver/invalid_email.html",
+                          context={"realm_name": realm.name, "closed_domain": True})
+        except DisposableEmailError:
+            return render(request, "zerver/invalid_email.html",
+                          context={"realm_name": realm.name, "disposable_emails_not_allowed": True})
 
         if realm.deactivated:
             # The user is trying to register for a deactivated realm. Advise them to
@@ -176,6 +182,7 @@ def accounts_register(request: HttpRequest) -> HttpResponse:
             realm_name = form.cleaned_data['realm_name']
             realm = do_create_realm(string_id, realm_name)
             setup_initial_streams(realm)
+            setup_realm_internal_bots(realm)
         assert(realm is not None)
 
         full_name = form.cleaned_data['full_name']
@@ -183,13 +190,13 @@ def accounts_register(request: HttpRequest) -> HttpResponse:
         default_stream_group_names = request.POST.getlist('default_stream_group')
         default_stream_groups = lookup_default_stream_groups(default_stream_group_names, realm)
 
-        timezone = u""
+        timezone = ""
         if 'timezone' in request.POST and request.POST['timezone'] in get_all_timezones():
             timezone = request.POST['timezone']
 
         if not realm_creation:
             try:
-                existing_user_profile = get_user(email, realm)
+                existing_user_profile = get_user(email, realm)  # type: Optional[UserProfile]
             except UserProfile.DoesNotExist:
                 existing_user_profile = None
         else:
@@ -293,9 +300,9 @@ def login_and_go_to_home(request: HttpRequest, user_profile: UserProfile) -> Htt
     do_login(request, user_profile)
     return HttpResponseRedirect(user_profile.realm.uri + reverse('zerver.views.home.home'))
 
-def send_registration_completion_email(email: str, request: HttpRequest,
-                                       realm_creation: bool=False,
-                                       streams: Optional[List[Stream]]=None) -> None:
+def prepare_activation_url(email: str, request: HttpRequest,
+                           realm_creation: bool=False,
+                           streams: Optional[List[Stream]]=None) -> str:
     """
     Send an email with a confirmation link to the provided e-mail so the user
     can complete their registration.
@@ -303,18 +310,20 @@ def send_registration_completion_email(email: str, request: HttpRequest,
     prereg_user = create_preregistration_user(email, request, realm_creation)
 
     if streams is not None:
-        prereg_user.streams = streams
-        prereg_user.save()
+        prereg_user.streams.set(streams)
 
     confirmation_type = Confirmation.USER_REGISTRATION
     if realm_creation:
         confirmation_type = Confirmation.REALM_CREATION
 
     activation_url = create_confirmation_link(prereg_user, request.get_host(), confirmation_type)
-    send_email('zerver/emails/confirm_registration', to_email=email, from_address=FromAddress.NOREPLY,
-               context={'activate_url': activation_url})
     if settings.DEVELOPMENT and realm_creation:
         request.session['confirmation_key'] = {'confirmation_key': activation_url.split('/')[-1]}
+    return activation_url
+
+def send_confirm_registration_email(email: str, activation_url: str) -> None:
+    send_email('zerver/emails/confirm_registration', to_email=email, from_address=FromAddress.NOREPLY,
+               context={'activate_url': activation_url})
 
 def redirect_to_email_login_url(email: str) -> HttpResponseRedirect:
     login_url = reverse('django.contrib.auth.views.login')
@@ -323,14 +332,16 @@ def redirect_to_email_login_url(email: str) -> HttpResponseRedirect:
     return HttpResponseRedirect(redirect_url)
 
 def create_realm(request: HttpRequest, creation_key: Optional[Text]=None) -> HttpResponse:
+    try:
+        key_record = validate_key(creation_key)
+    except RealmCreationKey.Invalid:
+        return render(request, "zerver/realm_creation_failed.html",
+                      context={'message': _('The organization creation link has expired'
+                                            ' or is not valid.')})
     if not settings.OPEN_REALM_CREATION:
-        if creation_key is None:
+        if key_record is None:
             return render(request, "zerver/realm_creation_failed.html",
                           context={'message': _('New organization creation disabled.')})
-        elif not check_key_is_valid(creation_key):
-            return render(request, "zerver/realm_creation_failed.html",
-                          context={'message': _('The organization creation link has expired'
-                                                ' or is not valid.')})
 
     # When settings.OPEN_REALM_CREATION is enabled, anyone can create a new realm,
     # subject to a few restrictions on their email address.
@@ -338,14 +349,23 @@ def create_realm(request: HttpRequest, creation_key: Optional[Text]=None) -> Htt
         form = RealmCreationForm(request.POST)
         if form.is_valid():
             email = form.cleaned_data['email']
+            activation_url = prepare_activation_url(email, request, realm_creation=True)
+            if key_record is not None and key_record.presume_email_valid:
+                # The user has a token created from the server command line;
+                # skip confirming the email is theirs, taking their word for it.
+                # This is essential on first install if the admin hasn't stopped
+                # to configure outbound email up front, or it isn't working yet.
+                key_record.delete()
+                return HttpResponseRedirect(activation_url)
+
             try:
-                send_registration_completion_email(email, request, realm_creation=True)
+                send_confirm_registration_email(email, activation_url)
             except smtplib.SMTPException as e:
                 logging.error('Error in create_realm: %s' % (str(e),))
                 return HttpResponseRedirect("/config-error/smtp")
 
-            if (creation_key is not None and check_key_is_valid(creation_key)):
-                RealmCreationKey.objects.get(creation_key=creation_key).delete()
+            if key_record is not None:
+                key_record.delete()
             return HttpResponseRedirect(reverse('send_confirm', kwargs={'email': email}))
     else:
         form = RealmCreationForm()
@@ -378,8 +398,9 @@ def accounts_home(request: HttpRequest, multiuse_object: Optional[MultiuseInvite
         form = HomepageForm(request.POST, realm=realm, from_multiuse_invite=from_multiuse_invite)
         if form.is_valid():
             email = form.cleaned_data['email']
+            activation_url = prepare_activation_url(email, request, streams=streams_to_subscribe)
             try:
-                send_registration_completion_email(email, request, streams=streams_to_subscribe)
+                send_confirm_registration_email(email, activation_url)
             except smtplib.SMTPException as e:
                 logging.error('Error in accounts_home: %s' % (str(e),))
                 return HttpResponseRedirect("/config-error/smtp")

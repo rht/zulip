@@ -61,6 +61,7 @@ function render(template_name, args) {
             subject: "testing",
             sender_full_name: "King Lear",
         },
+        should_display_quote_and_reply: true,
         can_edit_message: true,
         can_mute_topic: true,
         narrowed: true,
@@ -72,6 +73,27 @@ function render(template_name, args) {
     var link = $(html).find("a.respond_button");
     assert.equal(link.text().trim(), 'translated: Quote and reply');
     global.write_handlebars_output("actions_popover_content", html);
+
+    var deletedArgs = {
+        message: {
+            is_stream: true,
+            id: "100",
+            stream: "devel",
+            subject: "testing",
+            sender_full_name: "King Lear",
+        },
+        should_display_edit_and_view_source: false,
+        should_display_quote_and_reply: false,
+        narrowed: true,
+    };
+
+    var deletedHtml = '<div style="height: 250px">';
+    deletedHtml += render('actions_popover_content', deletedArgs);
+    deletedHtml += "</div>";
+    var viewSourceLink = $(deletedHtml).find("a.popover_edit_message");
+    assert.equal(viewSourceLink.length, 0);
+    var quoteLink = $(deletedHtml).find("a.respond_button");
+    assert.equal(quoteLink.length, 0);
 }());
 
 (function admin_realm_domains_list() {
@@ -171,6 +193,55 @@ function render(template_name, args) {
 
     assert.equal(emoji_name.text(), 'MouseFace');
     assert.equal(emoji_url.attr('src'), 'http://emojipedia-us.s3.amazonaws.com/cache/46/7f/467fe69069c408e07517621f263ea9b5.png');
+}());
+
+(function admin_profile_field_list() {
+
+    // When the logged in user is admin
+    var args = {
+        profile_field: {
+            name: "teams",
+            type: "Long Text",
+        },
+        can_modify: true,
+    };
+
+    var html = '';
+    html += '<tbody id="admin_profile_fields_table">';
+    html += render('admin_profile_field_list', args);
+    html += '</tbody>';
+
+    var field_name = $(html).find('tr.profile-field-row:first span.profile_field_name');
+    var field_type = $(html).find('tr.profile-field-row:first span.profile_field_type');
+    var td = $(html).find('tr.profile-field-row:first td');
+
+    assert.equal(field_name.text(), 'teams');
+    assert.equal(field_type.text(), 'Long Text');
+    assert.equal(td.length, 3);
+
+    // When the logged in user is not admin
+    args = {
+        profile_field: {
+            name: "teams",
+            type: "Long Text",
+        },
+        can_modify: false,
+    };
+
+    html = '';
+    html += '<tbody id="admin_profile_fields_table">';
+    html += render('admin_profile_field_list', args);
+    html += '</tbody>';
+
+    global.write_test_output('admin_profile_field_list', html);
+
+    field_name = $(html).find('tr.profile-field-row:first span.profile_field_name');
+    field_type = $(html).find('tr.profile-field-row:first span.profile_field_type');
+    td = $(html).find('tr.profile-field-row:first td');
+
+    assert.equal(field_name.text(), 'teams');
+    assert.equal(field_type.text(), 'Long Text');
+    assert.equal(td.length, 2);
 }());
 
 (function admin_filter_list() {
@@ -283,6 +354,33 @@ function render(template_name, args) {
     global.write_handlebars_output("admin_tab", html);
 }());
 
+(function admin_user_group_list() {
+    var args = {
+        user_group: {
+            id: "9",
+            name: "uranohoshi",
+            description: "Students at Uranohoshi Academy",
+        },
+    };
+
+    var html = '';
+    html += '<div id="user-groups">';
+    html += render('admin_user_group_list', args);
+    html += '</div>';
+
+    global.write_handlebars_output('admin_user_group_list', html);
+
+    var group_id = $(html).find('.user-group:first').prop('id');
+    var group_name_pills = $(html).find('.user-group:first .pill-container').attr('data-group-pills');
+    var group_name_display = $(html).find('.user-group:first .name').text().trim().replace(/\s+/g, ' ');
+    var group_description = $(html).find('.user-group:first .description').text().trim().replace(/\s+/g, ' ');
+
+    assert.equal(group_id, '9');
+    assert.equal(group_name_pills, 'uranohoshi');
+    assert.equal(group_name_display, 'uranohoshi');
+    assert.equal(group_description, 'Students at Uranohoshi Academy');
+}());
+
 (function admin_user_list() {
     var html = '<table>';
     var users = ['alice', 'bob', 'carl'];
@@ -374,6 +472,11 @@ function render(template_name, args) {
     assert.equal(button.length, 1);
     assert.equal(button.text().trim(), 'translated: Add alert word');
 
+}());
+
+(function all_messages_sidebar_actions() {
+    var html = render('all_messages_sidebar_actions');
+    global.write_handlebars_output("all_messages_sidebar_actions", html);
 }());
 
 (function announce_stream_docs() {
@@ -545,6 +648,28 @@ function render(template_name, args) {
     var expected_text = 'translated: Warning: Denmark is a private stream.';
     assert(actual_text.indexOf(expected_text) >= 1);
     global.write_handlebars_output("compose_stream_alert", html);
+}());
+
+(function custom_user_profile_field() {
+    var args = {field_name: "GitHub user name", field_id: 2, field_value: "@GitHub", field_type: "text"};
+    var html = render('custom-user-profile-field', args);
+    assert.equal($(html).find('input').attr('id'), 2);
+    assert.equal($(html).find('input').val(), "@GitHub");
+    global.write_handlebars_output("custom-user-profile-field", html);
+}());
+
+(function deactivate_stream_modal() {
+    var args = {
+        stream_name: "Public stream",
+    };
+    var html = render('deactivation-stream-modal', args);
+    global.write_handlebars_output("deactivation-stream-modal", html);
+
+    var modal_header = $(html).find("#deactivation_stream_modal_label");
+    assert.equal(modal_header.text(), "translated: Delete stream " + args.stream_name);
+
+    var button = $(html).find("#do_deactivate_stream_button");
+    assert.equal(button.text(), "translated: Yes, delete this stream");
 }());
 
 (function dev_env_email_access() {
@@ -741,6 +866,18 @@ function render(template_name, args) {
         $(html).find('.hotspot-description').text(),
         'Click the "New topic" button to start a new conversation.'
     );
+}());
+
+(function input_pill() {
+    var args = {
+        id: 22,
+        display_value: 'King Hamlet',
+    };
+
+    var html = render('input_pill', args);
+    global.write_handlebars_output("input_pill", html);
+
+    assert($(html).hasClass('pill'));
 }());
 
 (function invite_subscription() {
@@ -950,6 +1087,28 @@ function render(template_name, args) {
     assert.equal(button_area.find(".no_propagate_notifications").text().trim(), 'translated: No');
 }());
 
+(function reminder_popover_content() {
+    var args = {
+        message: {
+            is_stream: true,
+            id: "420",
+            stream: "devel",
+            subject: "testing",
+            sender_full_name: "Iago",
+        },
+        can_edit_message: true,
+        can_mute_topic: true,
+        narrowed: true,
+    };
+
+    var html = '<div style="height: 250px">';
+    html += render('remind_me_popover_content', args);
+    html += "</div>";
+    var link = $(html).find("a.remind.custom");
+    assert.equal(link.text().trim(), 'translated: Select date and time');
+    global.write_handlebars_output("remind_me_popover_content", html);
+}());
+
 (function settings_tab() {
     var page_param_checkbox_options = {
         enable_stream_desktop_notifications: true,
@@ -958,7 +1117,8 @@ function render(template_name, args) {
         enable_sounds: true, enable_offline_email_notifications: true,
         enable_offline_push_notifications: true, enable_online_push_notifications: true,
         enable_digest_emails: true,
-        autoscroll_forever: true, default_desktop_notifications: true,
+        default_desktop_notifications: true,
+        realm_name_in_notifications: true,
     };
     var page_params = $.extend(page_param_checkbox_options, {
         full_name: "Alyssa P. Hacker", password_auth_enabled: true,
@@ -970,8 +1130,9 @@ function render(template_name, args) {
                         "enable_stream_sounds", "enable_desktop_notifications",
                         "enable_sounds", "enable_offline_push_notifications",
                         "enable_online_push_notifications",
-                        "enable_digest_emails", "autoscroll_forever",
-                        "default_desktop_notifications"];
+                        "enable_digest_emails",
+                        "default_desktop_notifications",
+                        "realm_name_in_notifications"];
 
     // Render with all booleans set to true.
     var html = render('settings_tab', {page_params: page_params});
@@ -1118,6 +1279,7 @@ function render(template_name, args) {
         invite_only: true,
         can_make_public: true,
         can_make_private: true, /* not logical, but that's ok */
+        can_change_subscription_type: true,
         email_address: 'xxxxxxxxxxxxxxx@zulip.com',
         stream_id: 888,
         in_home_view: true,
@@ -1295,6 +1457,53 @@ function render(template_name, args) {
 
 }());
 
+(function user_group_info_popover() {
+    var html = render('user_group_info_popover');
+    global.write_handlebars_output("user_group_info_popover", html);
+
+    $(html).hasClass('popover message-info-popover group-info-popover');
+}());
+
+(function user_group_info_popover_content() {
+    var args = {
+        group_name: 'groupName',
+        group_description: 'groupDescription',
+        members: [
+            {
+                presence_status: 'active',
+                full_name: 'Active Alice',
+                user_last_seen_time_status: 'time',
+                is_bot: false,
+            },
+            {
+                presence_status: 'offline',
+                full_name: 'Bot Bob',
+                user_last_seen_time_status: 'time',
+                is_bot: true,
+            },
+            {
+                presence_status: 'offline',
+                full_name: 'Inactive Imogen',
+                user_last_seen_time_status: 'time',
+                is_bot: false,
+            },
+        ],
+    };
+
+    var html = render('user_group_info_popover_content', args);
+    global.write_handlebars_output("user_group_info_popover_content", html);
+
+    var allUsers = $(html).find("li");
+    assert.equal(allUsers[0].classList.contains("user_active"), true);
+    assert.equal(allUsers[2].classList.contains("user_offline"), true);
+    assert.equal($(allUsers[0]).text().trim(), 'Active Alice');
+    assert.equal($(allUsers[1]).text().trim(), 'Bot Bob');
+    assert.equal($(allUsers[2]).text().trim(), 'Inactive Imogen');
+
+    assert.equal($(html).find('.group-name').text().trim(), 'groupName');
+    assert.equal($(html).find('.group-description').text().trim(), 'groupDescription');
+}());
+
 (function user_info_popover() {
     var html = render('user_info_popover', {class: 'message-info-popover'});
     global.write_handlebars_output("user_info_popover", html);
@@ -1400,6 +1609,43 @@ function render(template_name, args) {
 
     assert.equal($(html).find("tr").data("stream"), "Verona");
     assert.equal($(html).find("tr").data("topic"), "Verona2");
+}());
+
+(function embedded_bot_config_item() {
+    var args = {
+        botname: 'giphy',
+        key: 'api_key',
+        value: '12345678',
+    };
+    var html = render('embedded_bot_config_item', args);
+    assert.equal($(html).attr('name'), args.botname);
+    assert.equal($(html).attr('id'), args.botname+'_'+args.key);
+    assert.equal($(html).find('label').text(), args.key);
+    assert.equal($(html).find('input').attr('placeholder'), args.value);
+}());
+
+(function edit_bot() {
+    render('edit_bot');
+}());
+
+(function edit_outgoing_webhook_service() {
+    var args = {
+        service: {base_url: "http://www.foo.bar",
+                  interface: "1"},
+    };
+    var html = render('edit-outgoing-webhook-service', args);
+    assert.equal($(html).find('#edit_service_base_url').attr('value'), args.service.base_url);
+    assert.equal($(html).find('#edit_service_interface').attr('value'), args.service.interface);
+}());
+
+(function edit_embedded_bot_service() {
+    var args = {
+        service: {service_name: "giphy",
+                  config_data: {key: "abcd1234"}},
+    };
+    var html = render('edit-embedded-bot-service', args);
+    assert.equal($(html).find('#embedded_bot_key_edit').attr('name'), 'key');
+    assert.equal($(html).find('#embedded_bot_key_edit').val(), 'abcd1234');
 }());
 
 // By the end of this test, we should have compiled all our templates.  Ideally,

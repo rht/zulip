@@ -25,7 +25,7 @@ from zerver.lib.actions import bulk_remove_subscriptions, \
 from zerver.lib.response import json_success, json_error, json_response
 from zerver.lib.streams import access_stream_by_id, access_stream_by_name, \
     check_stream_name, check_stream_name_available, filter_stream_authorization, \
-    list_to_streams, access_stream_for_delete, access_default_stream_group_by_id
+    list_to_streams, access_stream_for_delete_or_update, access_default_stream_group_by_id
 from zerver.lib.validator import check_string, check_int, check_list, check_dict, \
     check_bool, check_variable_type
 from zerver.models import UserProfile, Stream, Realm, Subscription, \
@@ -40,17 +40,14 @@ class PrincipalError(JsonableError):
     data_fields = ['principal']
     http_status_code = 403
 
-    def __init__(self, principal):
-        # type: (Text) -> None
+    def __init__(self, principal: Text) -> None:
         self.principal = principal  # type: Text
 
     @staticmethod
-    def msg_format():
-        # type: () -> Text
+    def msg_format() -> Text:
         return _("User not authorized to execute queries on behalf of '{principal}'")
 
-def principal_to_user_profile(agent, principal):
-    # type: (UserProfile, Text) -> UserProfile
+def principal_to_user_profile(agent: UserProfile, principal: Text) -> UserProfile:
     try:
         return get_user(principal, agent.realm)
     except UserProfile.DoesNotExist:
@@ -61,16 +58,18 @@ def principal_to_user_profile(agent, principal):
         raise PrincipalError(principal)
 
 @require_realm_admin
-def deactivate_stream_backend(request, user_profile, stream_id):
-    # type: (HttpRequest, UserProfile, int) -> HttpResponse
-    stream = access_stream_for_delete(user_profile, stream_id)
+def deactivate_stream_backend(request: HttpRequest,
+                              user_profile: UserProfile,
+                              stream_id: int) -> HttpResponse:
+    stream = access_stream_for_delete_or_update(user_profile, stream_id)
     do_deactivate_stream(stream)
     return json_success()
 
 @require_realm_admin
 @has_request_variables
-def add_default_stream(request, user_profile, stream_name=REQ()):
-    # type: (HttpRequest, UserProfile, Text) -> HttpResponse
+def add_default_stream(request: HttpRequest,
+                       user_profile: UserProfile,
+                       stream_name: Text=REQ()) -> HttpResponse:
     (stream, recipient, sub) = access_stream_by_name(user_profile, stream_name)
     do_add_default_stream(stream)
     return json_success()
@@ -133,8 +132,9 @@ def remove_default_stream_group(request: HttpRequest, user_profile: UserProfile,
 
 @require_realm_admin
 @has_request_variables
-def remove_default_stream(request, user_profile, stream_name=REQ()):
-    # type: (HttpRequest, UserProfile, Text) -> HttpResponse
+def remove_default_stream(request: HttpRequest,
+                          user_profile: UserProfile,
+                          stream_name: Text=REQ()) -> HttpResponse:
     (stream, recipient, sub) = access_stream_by_name(user_profile, stream_name)
     do_remove_default_stream(stream)
     return json_success()
@@ -148,8 +148,9 @@ def update_stream_backend(
         is_private: Optional[bool]=REQ(validator=check_bool, default=None),
         new_name: Optional[Text]=REQ(validator=check_string, default=None),
 ) -> HttpResponse:
-    (stream, recipient, sub) = access_stream_by_id(user_profile, stream_id)
-
+    # We allow realm administrators to to update the stream name and
+    # description even for private streams.
+    stream = access_stream_for_delete_or_update(user_profile, stream_id)
     if description is not None:
         do_change_stream_description(stream, description)
     if new_name is not None:
@@ -161,12 +162,15 @@ def update_stream_backend(
             # are only changing the casing of the stream name).
             check_stream_name_available(user_profile.realm, new_name)
         do_rename_stream(stream, new_name)
+
+    # But we require even realm administrators to be actually
+    # subscribed to make a private stream public.
     if is_private is not None:
+        (stream, recipient, sub) = access_stream_by_id(user_profile, stream_id)
         do_change_stream_invite_only(stream, is_private)
     return json_success()
 
-def list_subscriptions_backend(request, user_profile):
-    # type: (HttpRequest, UserProfile) -> HttpResponse
+def list_subscriptions_backend(request: HttpRequest, user_profile: UserProfile) -> HttpResponse:
     return json_success({"subscriptions": gather_subscriptions(user_profile)[0]})
 
 FuncKwargPair = Tuple[Callable[..., HttpResponse], Dict[str, Union[int, Iterable[Any]]]]
@@ -217,9 +221,10 @@ def remove_subscriptions_backend(
 
     removing_someone_else = principals and \
         set(principals) != set((user_profile.email,))
+
     if removing_someone_else and not user_profile.is_realm_admin:
         # You can only unsubscribe other people from a stream if you are a realm
-        # admin.
+        # admin (whether the stream is public or private).
         return json_error(_("This action requires administrative rights"))
 
     streams_as_dict = []
@@ -227,13 +232,6 @@ def remove_subscriptions_backend(
         streams_as_dict.append({"name": stream_name.strip()})
 
     streams, __ = list_to_streams(streams_as_dict, user_profile)
-
-    for stream in streams:
-        if removing_someone_else and stream.invite_only and \
-                not subscribed_to_stream(user_profile, stream.id):
-            # Even as an admin, you can't remove other people from an
-            # invite-only stream you're not on.
-            return json_error(_("Cannot administer invite-only streams this way"))
 
     if principals:
         people_to_unsub = set(principal_to_user_profile(
@@ -252,8 +250,9 @@ def remove_subscriptions_backend(
 
     return json_success(result)
 
-def you_were_just_subscribed_message(acting_user, stream_names, private_stream_names):
-    # type: (UserProfile, Set[Text], Set[Text]) -> Text
+def you_were_just_subscribed_message(acting_user: UserProfile,
+                                     stream_names: Set[Text],
+                                     private_stream_names: Set[Text]) -> Text:
 
     # stream_names is the list of streams for which we should send notifications.
     #
@@ -374,7 +373,7 @@ def add_subscriptions_backend(
                     recipient_user=email_to_user_profile[email],
                     content=msg))
 
-    if announce and len(created_streams) > 0:
+    if announce and len(created_streams) > 0 and settings.NOTIFICATION_BOT is not None:
         notifications_stream = user_profile.realm.get_notifications_stream()
         if notifications_stream is not None:
             if len(created_streams) > 1:
@@ -412,7 +411,8 @@ def add_subscriptions_backend(
 @has_request_variables
 def get_subscribers_backend(request: HttpRequest, user_profile: UserProfile,
                             stream_id: int=REQ('stream', converter=to_non_negative_int)) -> HttpResponse:
-    (stream, recipient, sub) = access_stream_by_id(user_profile, stream_id)
+    (stream, recipient, sub) = access_stream_by_id(user_profile, stream_id,
+                                                   allow_realm_admin=True)
     subscribers = get_subscriber_emails(stream, user_profile)
 
     return json_success({'subscribers': subscribers})
@@ -440,6 +440,7 @@ def get_topics_backend(request: HttpRequest, user_profile: UserProfile,
     result = get_topic_history_for_stream(
         user_profile=user_profile,
         recipient=recipient,
+        public_history=not stream.invite_only,
     )
 
     return json_success(dict(topics=result))
@@ -469,14 +470,18 @@ def json_stream_exists(request: HttpRequest, user_profile: UserProfile, stream_n
     return json_success(result)  # results are ignored for HEAD requests
 
 @has_request_variables
-def json_get_stream_id(request, user_profile, stream_name=REQ('stream')):
-    # type: (HttpRequest, UserProfile, Text) -> HttpResponse
+def json_get_stream_id(request: HttpRequest,
+                       user_profile: UserProfile,
+                       stream_name: Text=REQ('stream')) -> HttpResponse:
     (stream, recipient, sub) = access_stream_by_name(user_profile, stream_name)
     return json_success({'stream_id': stream.id})
 
 @has_request_variables
-def update_subscriptions_property(request, user_profile, stream_id=REQ(), property=REQ(), value=REQ()):
-    # type: (HttpRequest, UserProfile, int, str, str) -> HttpResponse
+def update_subscriptions_property(request: HttpRequest,
+                                  user_profile: UserProfile,
+                                  stream_id: int=REQ(),
+                                  property: str=REQ(),
+                                  value: str=REQ()) -> HttpResponse:
     subscription_data = [{"property": property,
                           "stream_id": stream_id,
                           "value": value}]

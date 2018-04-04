@@ -20,6 +20,8 @@ IGNORED_PHRASES = [
     r"Dropbox",
     r"GitHub",
     r"Google",
+    r"Gravatar",
+    r"Hamlet",
     r"HTTP",
     r"ID",
     r"IDs",
@@ -50,6 +52,7 @@ IGNORED_PHRASES = [
     r"iPhone",
     r"iOS",
     r"Emoji One",
+    r"mailinator.com",
     # Code things
     r".zuliprc",
     r"__\w+\.\w+__",
@@ -67,6 +70,7 @@ IGNORED_PHRASES = [
     r"disabled",
 
     # Fragments of larger strings
+    (r'your subscriptions on your Streams page'),
     (r'Change notification settings for individual streams on your '
      '<a href="/#streams">Streams page</a>.'),
     (r'Looking for our '
@@ -76,9 +80,7 @@ IGNORED_PHRASES = [
     r"one or more people...",
     r"confirmation email",
     r"invites remaining",
-    r"^left$",
     r"was too large; the maximum file size is 25MiB.",
-    r"^right$",
     r"selected message",
     r"a-z",
 
@@ -93,6 +95,10 @@ IGNORED_PHRASES = [
     r'activation key',
     # this is used as a topic
     r'^hello$',
+    # These are used as example short names (e.g. an uncapitalized context):
+    r"^marketing$",
+    r"^cookie$",
+    r"^new_emoji$",
 
     # TO CLEAN UP
     # Just want to avoid churning login.html right now
@@ -124,6 +130,11 @@ DISALLOWED_REGEXES = [re.compile(regex) for regex in [
     r'^[A-Z][a-z]+[\sa-z0-9]+[A-Z]',  # Checks if an upper case character exists
     # after a lower case character when the first character is in upper case.
 ]]
+
+BANNED_WORDS = {
+    'realm': ('The term realm should not appear in user-facing strings. '
+              'Use organization instead.'),
+}
 
 def get_safe_phrase(phrase):
     # type: (str) -> str
@@ -189,10 +200,26 @@ def is_capitalized(safe_text):
 
     return True
 
+def check_banned_words(text: str) -> List[str]:
+    lower_cased_text = text.lower()
+    errors = []
+    for word, reason in BANNED_WORDS.items():
+        if word in lower_cased_text:
+            # Hack: Should move this into BANNED_WORDS framework; for
+            # now, just hand-code the skips:
+            if 'realm_name' in lower_cased_text:
+                continue
+            kwargs = dict(word=word, text=text, reason=reason)
+            msg = "{word} found in '{text}'. {reason}".format(**kwargs)
+            errors.append(msg)
+
+    return errors
+
 def check_capitalization(strings):
-    # type: (List[str]) -> Tuple[List[str], List[str]]
+    # type: (List[str]) -> Tuple[List[str], List[str], List[str]]
     errors = []
     ignored = []
+    banned_word_errors = []
     for text in strings:
         text = ' '.join(text.split())  # Remove extra whitespaces.
         safe_text = get_safe_text(text)
@@ -203,4 +230,6 @@ def check_capitalization(strings):
         elif capitalized and has_ignored_phrase:
             ignored.append(text)
 
-    return sorted(errors), sorted(ignored)
+        banned_word_errors.extend(check_banned_words(text))
+
+    return sorted(errors), sorted(ignored), sorted(banned_word_errors)

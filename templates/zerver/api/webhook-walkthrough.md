@@ -1,9 +1,9 @@
 # Webhook walkthrough
 
-Below explains each part of a simple webhook integration, called **Hello
-World**. This webhook sends a "hello" message to the `test` stream and includes
-a link to the Wikipedia article of the day, which it formats from json data it
-receives in the http request.
+Below, we explain each part of a simple webhook integration, called
+**Hello World**.  This webhook sends a "hello" message to the `test`
+stream and includes a link to the Wikipedia article of the day, which
+it formats from json data it receives in the http request.
 
 Use this walkthrough to learn how to write your first webhook
 integration.
@@ -47,8 +47,8 @@ some other kind of data. See [Step 4: Create tests](#step-4-create-tests) or
 In the `zerver/webhooks/` directory, create new subdirectory that will
 contain all of corresponding code.  In our example it will be
 `helloworld`. The new directory will be a python package, so you have
-to create an empty `__init__.py` file in that directory via e.g. `touch
-zerver/webhooks/helloworld/__init__.py`.
+to create an empty `__init__.py` file in that directory via e.g.
+`touch zerver/webhooks/helloworld/__init__.py`.
 
 ## Step 2: Create main webhook code
 
@@ -58,23 +58,25 @@ python file, `zerver/webhooks/mywebhook/view.py`.
 The Hello World integration is in `zerver/webhooks/helloworld/view.py`:
 
 ```
-from django.utils.translation import ugettext as _
-from zerver.lib.actions import check_send_stream_message
-from zerver.lib.response import json_success, json_error
-from zerver.decorator import REQ, has_request_variables, api_key_only_webhook_view
-from zerver.lib.validator import check_dict, check_string
-
-from zerver.models import Client, UserProfile
+from typing import Any, Dict, Iterable, Optional, Text
 
 from django.http import HttpRequest, HttpResponse
-from typing import Dict, Any, Iterable, Optional, Text
+from django.utils.translation import ugettext as _
+
+from zerver.decorator import api_key_only_webhook_view
+from zerver.lib.webhooks.common import check_send_webhook_message
+from zerver.lib.request import REQ, has_request_variables
+from zerver.lib.response import json_error, json_success
+from zerver.lib.validator import check_dict, check_string
+from zerver.models import UserProfile
 
 @api_key_only_webhook_view('HelloWorld')
 @has_request_variables
-def api_helloworld_webhook(request: HttpRequest, user_profile: UserProfile,
-                           payload: Dict[str, Iterable[Dict[str, Any]]]=REQ(argument_type='body'),
-                           stream: Text=REQ(default='test'),
-                           topic: Text=REQ(default='Hello World')) -> HttpResponse:
+def api_helloworld_webhook(
+        request: HttpRequest, user_profile: UserProfile,
+        payload: Dict[str, Iterable[Dict[str, Any]]]=REQ(argument_type='body')
+) -> HttpResponse:
+
     # construct the body of the message
     body = 'Hello! I am happy to be here! :smile:'
 
@@ -82,11 +84,11 @@ def api_helloworld_webhook(request: HttpRequest, user_profile: UserProfile,
     body_template = '\nThe Wikipedia featured article for today is **[{featured_title}]({featured_url})**'
     body += body_template.format(**payload)
 
-    # send the message
-    check_send_stream_message(user_profile, request.client,
-                              stream, topic, body)
+    topic = "Hello World"
 
-    # return json result
+    # send the message
+    check_send_webhook_message(request, user_profile, topic, body)
+
     return json_success()
 ```
 
@@ -136,8 +138,13 @@ link to the Wikipedia article of the day as provided by the json payload.
   integration checks for. In such a case, any `KeyError` thrown is handled by the server
   backend and will create an appropriate response.
 
-Then we send a public (stream) message with `check_send_stream_message` which will
-validate the message and then send it.
+Then we send a message with `check_send_webhook_message`, which will
+validate the message and do the following:
+
+* Send a public (stream) message if the `stream` query parameter is
+  specified in the webhook URL.
+* If the `stream` query parameter isn't specified, it will send a private
+  message to the owner of the webhook bot.
 
 Finally, we return a 200 http status with a JSON format success message via
 `json_success()`.
@@ -226,8 +233,8 @@ class HelloWorldHookTests(WebhookTestCase):
 
     # Note: Include a test function per each distinct message condition your integration supports
     def test_hello_message(self) -> None:
-        expected_subject = u"Hello World";
-        expected_message = u"Hello! I am happy to be here! :smile: \nThe Wikipedia featured article for today is **[Marilyn Monroe](https://en.wikipedia.org/wiki/Marilyn_Monroe)**";
+        expected_subject = "Hello World";
+        expected_message = "Hello! I am happy to be here! :smile: \nThe Wikipedia featured article for today is **[Marilyn Monroe](https://en.wikipedia.org/wiki/Marilyn_Monroe)**";
 
         # use fixture named helloworld_hello
         self.send_and_test_stream_message('hello', expected_subject, expected_message,
@@ -267,8 +274,8 @@ class called something like `test_goodbye_message`:
 
 ```
     def test_goodbye_message(self) -> None:
-        expected_subject = u"Hello World";
-        expected_message = u"Hello! I am happy to be here! :smile:\nThe Wikipedia featured article for today is **[Goodbye](https://en.wikipedia.org/wiki/Goodbye)**";
+        expected_subject = "Hello World";
+        expected_message = "Hello! I am happy to be here! :smile:\nThe Wikipedia featured article for today is **[Goodbye](https://en.wikipedia.org/wiki/Goodbye)**";
 
         # use fixture named helloworld_goodbye
         self.send_and_test_stream_message('goodbye', expected_subject, expected_message,
@@ -486,12 +493,12 @@ class QuerytestHookTests(WebhookTestCase):
 
     def test_querytest_test_one(self) -> None:
         # construct the URL used for this test
-        self.TOPIC = u"Query Test"
+        self.TOPIC = "Query Test"
         self.url = self.build_webhook_url(topic=self.TOPIC)
 
         # define the expected message contents
-        expected_subject = u"Query Test"
-        expected_message = u"This is a test of custom query parameters."
+        expected_subject = "Query Test"
+        expected_message = "This is a test of custom query parameters."
 
         self.send_and_test_stream_message('test_one', expected_subject, expected_message,
                                           content_type="application/x-www-form-urlencoded")

@@ -4,6 +4,7 @@ from django.test import TestCase, override_settings
 
 from zerver.lib import bugdown
 from zerver.lib.actions import (
+    do_set_user_display_setting,
     do_remove_realm_emoji,
     do_set_alert_words,
     get_realm,
@@ -23,6 +24,7 @@ from zerver.lib.test_classes import (
 )
 from zerver.lib.test_runner import slow
 from zerver.lib import mdiff
+from zerver.lib.tex import render_tex
 from zerver.models import (
     realm_in_local_realm_filters_cache,
     flush_per_request_caches,
@@ -31,9 +33,11 @@ from zerver.models import (
     get_realm,
     get_stream,
     realm_filters_for_realm,
+    MAX_MESSAGE_LENGTH,
     Message,
     Stream,
     Realm,
+    RealmEmoji,
     RealmFilter,
     Recipient,
     UserProfile,
@@ -211,7 +215,14 @@ class BugdownMiscTest(ZulipTestCase):
         self.assertEqual(mention_data.get_user_ids(), {hamlet.id, cordelia.id})
 
         user = mention_data.get_user('king hamLET')
+        assert(user is not None)
         self.assertEqual(user['email'], hamlet.email)
+
+    def test_invalid_katex_path(self) -> None:
+        with self.settings(STATIC_ROOT="/invalid/path"):
+            with mock.patch('logging.error') as mock_logger:
+                render_tex("random text")
+                mock_logger.assert_called_with("Cannot find KaTeX for latex rendering!")
 
 class BugdownTest(ZulipTestCase):
     def assertEqual(self, first: Any, second: Any, msg: Text = "") -> None:
@@ -231,18 +242,38 @@ class BugdownTest(ZulipTestCase):
 
         return test_fixtures, data['linkify_tests']
 
+    def test_bugdown_no_ignores(self) -> None:
+        # We do not want any ignored tests to be committed and merged.
+        format_tests, linkify_tests = self.load_bugdown_tests()
+        for name, test in format_tests.items():
+            message = 'Test "%s" shouldn\'t be ignored.' % (name,)
+            is_ignored = test.get('ignore', False)
+            self.assertFalse(is_ignored, message)
+
     @slow("Aggregate of runs dozens of individual markdown tests")
     def test_bugdown_fixtures(self) -> None:
         format_tests, linkify_tests = self.load_bugdown_tests()
-        valid_keys = set(['name', "input", "expected_output",
+        valid_keys = set(["name", "input", "expected_output",
                           "backend_only_rendering",
-                          "marked_expected_output", "text_content"])
+                          "marked_expected_output", "text_content",
+                          "translate_emoticons", "ignore"])
 
         for name, test in format_tests.items():
             # Check that there aren't any unexpected keys as those are often typos
             self.assertEqual(len(set(test.keys()) - valid_keys), 0)
 
-            converted = bugdown_convert(test['input'])
+            # Ignore tests if specified
+            if test.get('ignore', False):
+                return  # nocoverage
+
+            if test.get('translate_emoticons', False):
+                # Create a userprofile and send message with it.
+                user_profile = self.example_user('othello')
+                do_set_user_display_setting(user_profile, 'translate_emoticons', True)
+                msg = Message(sender=user_profile, sending_client=get_client("test"))
+                converted = render_markdown(msg, test['input'])
+            else:
+                converted = bugdown_convert(test['input'])
 
             print("Running Bugdown test %s" % (name,))
             self.assertEqual(converted, test['expected_output'])
@@ -279,6 +310,11 @@ class BugdownTest(ZulipTestCase):
             converted = bugdown.convert(msg, message_realm=realm)
             self.assertEqual(converted, '<p>Check out this file file:///Volumes/myserver/Users/Shared/pi.py</p>')
 
+    def test_inline_bitcoin(self) -> None:
+        msg = 'To bitcoin:1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa or not to bitcoin'
+        converted = bugdown_convert(msg)
+        self.assertEqual(converted, '<p>To <a href="bitcoin:1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa" target="_blank" title="bitcoin:1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa">bitcoin:1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa</a> or not to bitcoin</p>')
+
     def test_inline_youtube(self) -> None:
         msg = 'Check out the debate: http://www.youtube.com/watch?v=hx1mjT73xYE'
         converted = bugdown_convert(msg)
@@ -289,6 +325,17 @@ class BugdownTest(ZulipTestCase):
         converted = bugdown_convert(msg)
 
         self.assertEqual(converted, '<p><a href="http://www.youtube.com/watch?v=hx1mjT73xYE" target="_blank" title="http://www.youtube.com/watch?v=hx1mjT73xYE">http://www.youtube.com/watch?v=hx1mjT73xYE</a></p>\n<div class="youtube-video message_inline_image"><a data-id="hx1mjT73xYE" href="http://www.youtube.com/watch?v=hx1mjT73xYE" target="_blank" title="http://www.youtube.com/watch?v=hx1mjT73xYE"><img src="https://i.ytimg.com/vi/hx1mjT73xYE/default.jpg"></a></div>')
+
+    def test_inline_vimeo(self) -> None:
+        msg = 'Check out the debate: https://vimeo.com/246979354'
+        converted = bugdown_convert(msg)
+
+        self.assertEqual(converted, '<p>Check out the debate: <a href="https://vimeo.com/246979354" target="_blank" title="https://vimeo.com/246979354">https://vimeo.com/246979354</a></p>')
+
+        msg = 'https://vimeo.com/246979354'
+        converted = bugdown_convert(msg)
+
+        self.assertEqual(converted, '<p><a href="https://vimeo.com/246979354" target="_blank" title="https://vimeo.com/246979354">https://vimeo.com/246979354</a></p>')
 
     @override_settings(INLINE_IMAGE_PREVIEW=True)
     def test_inline_image_preview(self) -> None:
@@ -320,8 +367,16 @@ class BugdownTest(ZulipTestCase):
         converted = render_markdown(msg, content)
         self.assertEqual(converted, expected)
 
+        content = 'http://imaging.nikon.com/lineup/dslr/df/img/sample/img_01.jpg\n\n>http://imaging.nikon.com/lineup/dslr/df/img/sample/img_02.jpg\n\n* http://imaging.nikon.com/lineup/dslr/df/img/sample/img_03.jpg\n* https://www.google.com/images/srpr/logo4w.png'
+        expected = '<div class="message_inline_image"><a href="http://imaging.nikon.com/lineup/dslr/df/img/sample/img_01.jpg" target="_blank" title="http://imaging.nikon.com/lineup/dslr/df/img/sample/img_01.jpg"><img src="https://external-content.zulipcdn.net/1081f3eb3d307ff5b578c1f5ce9d4cef8f8953c4/687474703a2f2f696d6167696e672e6e696b6f6e2e636f6d2f6c696e6575702f64736c722f64662f696d672f73616d706c652f696d675f30312e6a7067"></a></div><blockquote>\n<div class="message_inline_image"><a href="http://imaging.nikon.com/lineup/dslr/df/img/sample/img_02.jpg" target="_blank" title="http://imaging.nikon.com/lineup/dslr/df/img/sample/img_02.jpg"><img src="https://external-content.zulipcdn.net/8a2da7577389c522fab18ba2e6d6947b85458074/687474703a2f2f696d6167696e672e6e696b6f6e2e636f6d2f6c696e6575702f64736c722f64662f696d672f73616d706c652f696d675f30322e6a7067"></a></div></blockquote>\n<ul>\n<li><div class="message_inline_image"><a href="http://imaging.nikon.com/lineup/dslr/df/img/sample/img_03.jpg" target="_blank" title="http://imaging.nikon.com/lineup/dslr/df/img/sample/img_03.jpg"><img src="https://external-content.zulipcdn.net/9c389273b239846aa6e07e109216773934e52828/687474703a2f2f696d6167696e672e6e696b6f6e2e636f6d2f6c696e6575702f64736c722f64662f696d672f73616d706c652f696d675f30332e6a7067"></a></div></li>\n<li><div class="message_inline_image"><a href="https://www.google.com/images/srpr/logo4w.png" target="_blank" title="https://www.google.com/images/srpr/logo4w.png"><img src="https://www.google.com/images/srpr/logo4w.png"></a></div></li>\n</ul>'
+
+        sender_user_profile = self.example_user('othello')
+        msg = Message(sender=sender_user_profile, sending_client=get_client("test"))
+        converted = render_markdown(msg, content)
+        self.assertEqual(converted, expected)
+
         content = 'Test 1\n[21136101110_1dde1c1a7e_o.jpg](/user_uploads/1/6d/F1PX6u16JA2P-nK45PyxHIYZ/21136101110_1dde1c1a7e_o.jpg) \n\nNext Image\n[IMG_20161116_023910.jpg](/user_uploads/1/69/sh7L06e7uH7NaX6d5WFfVYQp/IMG_20161116_023910.jpg) \n\nAnother Screenshot\n[Screenshot-from-2016-06-01-16-22-42.png](/user_uploads/1/70/_aZmIEWaN1iUaxwkDjkO7bpj/Screenshot-from-2016-06-01-16-22-42.png)'
-        expected = '<p>Test 1<br>\n<a href="/user_uploads/1/6d/F1PX6u16JA2P-nK45PyxHIYZ/21136101110_1dde1c1a7e_o.jpg" target="_blank" title="21136101110_1dde1c1a7e_o.jpg">21136101110_1dde1c1a7e_o.jpg</a> </p>\n<p>Next Image<br>\n<a href="/user_uploads/1/69/sh7L06e7uH7NaX6d5WFfVYQp/IMG_20161116_023910.jpg" target="_blank" title="IMG_20161116_023910.jpg">IMG_20161116_023910.jpg</a> </p>\n<p>Another Screenshot<br>\n<a href="/user_uploads/1/70/_aZmIEWaN1iUaxwkDjkO7bpj/Screenshot-from-2016-06-01-16-22-42.png" target="_blank" title="Screenshot-from-2016-06-01-16-22-42.png">Screenshot-from-2016-06-01-16-22-42.png</a></p>\n<div class="message_inline_image"><a href="/user_uploads/1/6d/F1PX6u16JA2P-nK45PyxHIYZ/21136101110_1dde1c1a7e_o.jpg" target="_blank" title="21136101110_1dde1c1a7e_o.jpg"><img src="/user_uploads/1/6d/F1PX6u16JA2P-nK45PyxHIYZ/21136101110_1dde1c1a7e_o.jpg"></a></div><div class="message_inline_image"><a href="/user_uploads/1/69/sh7L06e7uH7NaX6d5WFfVYQp/IMG_20161116_023910.jpg" target="_blank" title="IMG_20161116_023910.jpg"><img src="/user_uploads/1/69/sh7L06e7uH7NaX6d5WFfVYQp/IMG_20161116_023910.jpg"></a></div><div class="message_inline_image"><a href="/user_uploads/1/70/_aZmIEWaN1iUaxwkDjkO7bpj/Screenshot-from-2016-06-01-16-22-42.png" target="_blank" title="Screenshot-from-2016-06-01-16-22-42.png"><img src="/user_uploads/1/70/_aZmIEWaN1iUaxwkDjkO7bpj/Screenshot-from-2016-06-01-16-22-42.png"></a></div>'
+        expected = '<p>Test 1<br>\n<a href="/user_uploads/1/6d/F1PX6u16JA2P-nK45PyxHIYZ/21136101110_1dde1c1a7e_o.jpg" target="_blank" title="21136101110_1dde1c1a7e_o.jpg">21136101110_1dde1c1a7e_o.jpg</a> </p>\n<div class="message_inline_image"><a href="/user_uploads/1/6d/F1PX6u16JA2P-nK45PyxHIYZ/21136101110_1dde1c1a7e_o.jpg" target="_blank" title="21136101110_1dde1c1a7e_o.jpg"><img src="/user_uploads/1/6d/F1PX6u16JA2P-nK45PyxHIYZ/21136101110_1dde1c1a7e_o.jpg"></a></div><p>Next Image<br>\n<a href="/user_uploads/1/69/sh7L06e7uH7NaX6d5WFfVYQp/IMG_20161116_023910.jpg" target="_blank" title="IMG_20161116_023910.jpg">IMG_20161116_023910.jpg</a> </p>\n<div class="message_inline_image"><a href="/user_uploads/1/69/sh7L06e7uH7NaX6d5WFfVYQp/IMG_20161116_023910.jpg" target="_blank" title="IMG_20161116_023910.jpg"><img src="/user_uploads/1/69/sh7L06e7uH7NaX6d5WFfVYQp/IMG_20161116_023910.jpg"></a></div><p>Another Screenshot<br>\n<a href="/user_uploads/1/70/_aZmIEWaN1iUaxwkDjkO7bpj/Screenshot-from-2016-06-01-16-22-42.png" target="_blank" title="Screenshot-from-2016-06-01-16-22-42.png">Screenshot-from-2016-06-01-16-22-42.png</a></p>\n<div class="message_inline_image"><a href="/user_uploads/1/70/_aZmIEWaN1iUaxwkDjkO7bpj/Screenshot-from-2016-06-01-16-22-42.png" target="_blank" title="Screenshot-from-2016-06-01-16-22-42.png"><img src="/user_uploads/1/70/_aZmIEWaN1iUaxwkDjkO7bpj/Screenshot-from-2016-06-01-16-22-42.png"></a></div>'
 
         msg = Message(sender=sender_user_profile, sending_client=get_client("test"))
         converted = render_markdown(msg, content)
@@ -566,7 +621,10 @@ class BugdownTest(ZulipTestCase):
         # Needs to mock an actual message because that's how bugdown obtains the realm
         msg = Message(sender=self.example_user('hamlet'))
         converted = bugdown.convert(":green_tick:", message_realm=realm, message=msg)
-        self.assertEqual(converted, '<p>%s</p>' % (emoji_img(':green_tick:', 'green_tick.png', realm.id)))
+        realm_emoji = RealmEmoji.objects.filter(realm=realm,
+                                                name='green_tick',
+                                                deactivated=False).get()
+        self.assertEqual(converted, '<p>%s</p>' % (emoji_img(':green_tick:', realm_emoji.file_name, realm.id)))
 
         # Deactivate realm emoji.
         do_remove_realm_emoji(realm, 'green_tick')
@@ -590,6 +648,16 @@ class BugdownTest(ZulipTestCase):
         msg = u'\u2615\u2615'  # ☕☕
         converted = bugdown_convert(msg)
         self.assertEqual(converted, u'<p><span class="emoji emoji-2615" title="coffee">:coffee:</span><span class="emoji emoji-2615" title="coffee">:coffee:</span></p>')
+
+    def test_no_translate_emoticons_if_off(self) -> None:
+        user_profile = self.example_user('othello')
+        do_set_user_display_setting(user_profile, 'translate_emoticons', False)
+        msg = Message(sender=user_profile, sending_client=get_client("test"))
+
+        content = u':)'
+        expected = u'<p>:)</p>'
+        converted = render_markdown(msg, content)
+        self.assertEqual(converted, expected)
 
     def test_same_markup(self) -> None:
         msg = u'\u2615'  # ☕
@@ -714,6 +782,14 @@ class BugdownTest(ZulipTestCase):
         )
         self.assertTrue(Message.is_status_message(content, rendered_content))
 
+        content = '/me writes a second line\nline'
+        rendered_content = render_markdown(msg, content)
+        self.assertEqual(
+            rendered_content,
+            '<p>/me writes a second line<br>\nline</p>'
+        )
+        self.assertFalse(Message.is_status_message(content, rendered_content))
+
     def test_alert_words(self) -> None:
         user_profile = self.example_user('othello')
         do_set_alert_words(user_profile, ["ALERTWORD", "scaryword"])
@@ -739,9 +815,9 @@ class BugdownTest(ZulipTestCase):
         user_profile = self.example_user('othello')
         msg = Message(sender=user_profile, sending_client=get_client("test"))
 
-        content = "@all test"
+        content = "@**all** test"
         self.assertEqual(render_markdown(msg, content),
-                         '<p><span class="user-mention" data-user-email="*" data-user-id="*">'
+                         '<p><span class="user-mention" data-user-id="*">'
                          '@all'
                          '</span> test</p>')
         self.assertTrue(msg.mentions_wildcard)
@@ -750,12 +826,44 @@ class BugdownTest(ZulipTestCase):
         user_profile = self.example_user('othello')
         msg = Message(sender=user_profile, sending_client=get_client("test"))
 
-        content = "@everyone test"
+        content = "@**everyone** test"
         self.assertEqual(render_markdown(msg, content),
-                         '<p><span class="user-mention" data-user-email="*" data-user-id="*">@everyone</span> test</p>')
+                         '<p><span class="user-mention" data-user-id="*">'
+                         '@everyone'
+                         '</span> test</p>')
         self.assertTrue(msg.mentions_wildcard)
 
-    def test_mention_everyone_style_normal_user(self) -> None:
+    def test_mention_at_wildcard(self) -> None:
+        user_profile = self.example_user('othello')
+        msg = Message(sender=user_profile, sending_client=get_client("test"))
+
+        content = "@all test"
+        self.assertEqual(render_markdown(msg, content),
+                         '<p>@all test</p>')
+        self.assertFalse(msg.mentions_wildcard)
+        self.assertEqual(msg.mentions_user_ids, set([]))
+
+    def test_mention_at_everyone(self) -> None:
+        user_profile = self.example_user('othello')
+        msg = Message(sender=user_profile, sending_client=get_client("test"))
+
+        content = "@everyone test"
+        self.assertEqual(render_markdown(msg, content),
+                         '<p>@everyone test</p>')
+        self.assertFalse(msg.mentions_wildcard)
+        self.assertEqual(msg.mentions_user_ids, set([]))
+
+    def test_mention_word_starting_with_at_wildcard(self) -> None:
+        user_profile = self.example_user('othello')
+        msg = Message(sender=user_profile, sending_client=get_client("test"))
+
+        content = "test @alleycat.com test"
+        self.assertEqual(render_markdown(msg, content),
+                         '<p>test @alleycat.com test</p>')
+        self.assertFalse(msg.mentions_wildcard)
+        self.assertEqual(msg.mentions_user_ids, set([]))
+
+    def test_mention_at_normal_user(self) -> None:
         user_profile = self.example_user('othello')
         msg = Message(sender=user_profile, sending_client=get_client("test"))
 
@@ -774,9 +882,8 @@ class BugdownTest(ZulipTestCase):
         content = "@**King Hamlet**"
         self.assertEqual(render_markdown(msg, content),
                          '<p><span class="user-mention" '
-                         'data-user-email="%s" '
                          'data-user-id="%s">'
-                         '@King Hamlet</span></p>' % (self.example_email("hamlet"), user_id))
+                         '@King Hamlet</span></p>' % (user_id))
         self.assertEqual(msg.mentions_user_ids, set([user_profile.id]))
 
     def test_possible_mentions(self) -> None:
@@ -785,7 +892,7 @@ class BugdownTest(ZulipTestCase):
 
         assert_mentions('', set())
         assert_mentions('boring', set())
-        assert_mentions('@all', set())
+        assert_mentions('@**all**', set())
         assert_mentions('smush@**steve**smush', set())
 
         assert_mentions(
@@ -804,12 +911,10 @@ class BugdownTest(ZulipTestCase):
         self.assertEqual(render_markdown(msg, content),
                          '<p>'
                          '<span class="user-mention" '
-                         'data-user-email="%s" '
                          'data-user-id="%s">@King Hamlet</span> and '
                          '<span class="user-mention" '
-                         'data-user-email="%s" '
                          'data-user-id="%s">@Cordelia Lear</span>, '
-                         'check this out</p>' % (hamlet.email, hamlet.id, cordelia.email, cordelia.id))
+                         'check this out</p>' % (hamlet.id, cordelia.id))
         self.assertEqual(msg.mentions_user_ids, set([hamlet.id, cordelia.id]))
 
     def test_mention_invalid(self) -> None:
@@ -835,13 +940,11 @@ class BugdownTest(ZulipTestCase):
         content = "@**King Hamlet** @*support*"
         self.assertEqual(render_markdown(msg, content),
                          '<p><span class="user-mention" '
-                         'data-user-email="%s" '
                          'data-user-id="%s">'
                          '@King Hamlet</span> '
                          '<span class="user-group-mention" '
                          'data-user-group-id="%s">'
-                         '@support</span></p>' % (self.example_email("hamlet"),
-                                                  user_id,
+                         '@support</span></p>' % (user_id,
                                                   user_group.id))
         self.assertEqual(msg.mentions_user_ids, set([user_profile.id]))
         self.assertEqual(msg.mentions_user_group_ids, set([user_group.id]))
@@ -852,7 +955,7 @@ class BugdownTest(ZulipTestCase):
 
         assert_mentions('', set())
         assert_mentions('boring', set())
-        assert_mentions('@all', set())
+        assert_mentions('@**all**', set())
         assert_mentions('smush@*steve*smush', set())
 
         assert_mentions(
@@ -902,7 +1005,7 @@ class BugdownTest(ZulipTestCase):
         content = "#**Denmark**"
         self.assertEqual(
             render_markdown(msg, content),
-            '<p><a class="stream" data-stream-id="{d.id}" href="/#narrow/stream/Denmark">#{d.name}</a></p>'.format(
+            '<p><a class="stream" data-stream-id="{d.id}" href="/#narrow/stream/{d.id}-Denmark">#{d.name}</a></p>'.format(
                 d=denmark
             ))
 
@@ -917,10 +1020,10 @@ class BugdownTest(ZulipTestCase):
                          '<p>Look to '
                          '<a class="stream" '
                          'data-stream-id="{denmark.id}" '
-                         'href="/#narrow/stream/Denmark">#{denmark.name}</a> and '
+                         'href="/#narrow/stream/{denmark.id}-Denmark">#{denmark.name}</a> and '
                          '<a class="stream" '
                          'data-stream-id="{scotland.id}" '
-                         'href="/#narrow/stream/Scotland">#{scotland.name}</a>, '
+                         'href="/#narrow/stream/{scotland.id}-Scotland">#{scotland.name}</a>, '
                          'there something</p>'.format(denmark=denmark, scotland=scotland))
 
     def test_stream_case_sensitivity(self) -> None:
@@ -931,7 +1034,7 @@ class BugdownTest(ZulipTestCase):
         content = "#**CaseSens**"
         self.assertEqual(
             render_markdown(msg, content),
-            '<p><a class="stream" data-stream-id="{s.id}" href="/#narrow/stream/{s.name}">#{s.name}</a></p>'.format(
+            '<p><a class="stream" data-stream-id="{s.id}" href="/#narrow/stream/{s.id}-{s.name}">#{s.name}</a></p>'.format(
                 s=case_sens
             ))
 
@@ -964,11 +1067,15 @@ class BugdownTest(ZulipTestCase):
         sender_user_profile = self.example_user('othello')
         msg = Message(sender=sender_user_profile, sending_client=get_client("test"))
         content = u"#**привет**"
+        quoted_name = '.D0.BF.D1.80.D0.B8.D0.B2.D0.B5.D1.82'
+        href = '/#narrow/stream/{stream_id}-{quoted_name}'.format(
+            stream_id=uni.id,
+            quoted_name=quoted_name)
         self.assertEqual(
             render_markdown(msg, content),
-            u'<p><a class="stream" data-stream-id="{s.id}" href="/#narrow/stream/{url}">#{s.name}</a></p>'.format(
+            u'<p><a class="stream" data-stream-id="{s.id}" href="{href}">#{s.name}</a></p>'.format(
                 s=uni,
-                url=urllib.parse.quote(uni.name)
+                href=href,
             ))
 
     def test_stream_invalid(self) -> None:
@@ -979,58 +1086,6 @@ class BugdownTest(ZulipTestCase):
         self.assertEqual(render_markdown(msg, content),
                          '<p>There #<strong>Nonexistentstream</strong></p>')
         self.assertEqual(msg.mentions_user_ids, set())
-
-    def test_stream_subscribe_button_simple(self) -> None:
-        msg = '!_stream_subscribe_button(simple)'
-        converted = bugdown_convert(msg)
-        self.assertEqual(
-            converted,
-            '<p>'
-            '<span class="inline-subscribe" data-stream-name="simple">'
-            '<button class="inline-subscribe-button btn">Subscribe to simple</button>'
-            '<span class="inline-subscribe-error"></span>'
-            '</span>'
-            '</p>'
-        )
-
-    def test_stream_subscribe_button_in_name(self) -> None:
-        msg = '!_stream_subscribe_button(simple (not\\))'
-        converted = bugdown_convert(msg)
-        self.assertEqual(
-            converted,
-            '<p>'
-            '<span class="inline-subscribe" data-stream-name="simple (not)">'
-            '<button class="inline-subscribe-button btn">Subscribe to simple (not)</button>'
-            '<span class="inline-subscribe-error"></span>'
-            '</span>'
-            '</p>'
-        )
-
-    def test_stream_subscribe_button_after_name(self) -> None:
-        msg = '!_stream_subscribe_button(simple) (not)'
-        converted = bugdown_convert(msg)
-        self.assertEqual(
-            converted,
-            '<p>'
-            '<span class="inline-subscribe" data-stream-name="simple">'
-            '<button class="inline-subscribe-button btn">Subscribe to simple</button>'
-            '<span class="inline-subscribe-error"></span>'
-            '</span>'
-            ' (not)</p>'
-        )
-
-    def test_stream_subscribe_button_slash(self) -> None:
-        msg = '!_stream_subscribe_button(simple\\\\)'
-        converted = bugdown_convert(msg)
-        self.assertEqual(
-            converted,
-            '<p>'
-            '<span class="inline-subscribe" data-stream-name="simple\\">'
-            '<button class="inline-subscribe-button btn">Subscribe to simple\\</button>'
-            '<span class="inline-subscribe-error"></span>'
-            '</span>'
-            '</p>'
-        )
 
     def test_in_app_modal_link(self) -> None:
         msg = '!modal_link(#settings, Settings page)'
@@ -1123,11 +1178,33 @@ class BugdownTest(ZulipTestCase):
         realm = get_realm("zulip")
         sender_user_profile = self.example_user('othello')
         message = Message(sender=sender_user_profile, sending_client=get_client("test"))
-        msg = "http://zulip.testserver/#narrow/stream/hello"
+        msg = "http://zulip.testserver/#narrow/stream/999-hello"
 
         self.assertEqual(
             bugdown.convert(msg, message_realm=realm, message=message),
-            '<p><a href="#narrow/stream/hello" title="#narrow/stream/hello">http://zulip.testserver/#narrow/stream/hello</a></p>'
+            '<p><a href="#narrow/stream/999-hello" title="#narrow/stream/999-hello">http://zulip.testserver/#narrow/stream/999-hello</a></p>'
+        )
+
+    def test_relative_link_streams_page(self) -> None:
+        realm = get_realm("zulip")
+        sender_user_profile = self.example_user('othello')
+        message = Message(sender=sender_user_profile, sending_client=get_client("test"))
+        msg = "http://zulip.testserver/#streams/all"
+
+        self.assertEqual(
+            bugdown.convert(msg, message_realm=realm, message=message),
+            '<p><a href="#streams/all" target="_blank" title="#streams/all">http://zulip.testserver/#streams/all</a></p>'
+        )
+
+    def test_md_relative_link(self) -> None:
+        realm = get_realm("zulip")
+        sender_user_profile = self.example_user('othello')
+        message = Message(sender=sender_user_profile, sending_client=get_client("test"))
+        msg = "[hello](http://zulip.testserver/#narrow/stream/999-hello)"
+
+        self.assertEqual(
+            bugdown.convert(msg, message_realm=realm, message=message),
+            '<p><a href="#narrow/stream/999-hello" title="#narrow/stream/999-hello">hello</a></p>'
         )
 
 class BugdownApiTests(ZulipTestCase):
@@ -1152,8 +1229,9 @@ class BugdownApiTests(ZulipTestCase):
         )
         self.assert_json_success(result)
         user_id = self.example_user('hamlet').id
+        stream_id = get_stream('Denmark', get_realm('zulip')).id
         self.assertEqual(result.json()['rendered'],
-                         u'<p>This mentions <a class="stream" data-stream-id="%s" href="/#narrow/stream/Denmark">#Denmark</a> and <span class="user-mention" data-user-email="%s" data-user-id="%s">@King Hamlet</span>.</p>' % (get_stream("Denmark", get_realm("zulip")).id, self.example_email("hamlet"), user_id))
+                         u'<p>This mentions <a class="stream" data-stream-id="%s" href="/#narrow/stream/%s-Denmark">#Denmark</a> and <span class="user-mention" data-user-id="%s">@King Hamlet</span>.</p>' % (stream_id, stream_id, user_id))
 
 class BugdownErrorTests(ZulipTestCase):
     def test_bugdown_error_handling(self) -> None:
@@ -1169,6 +1247,14 @@ class BugdownErrorTests(ZulipTestCase):
             # handle i18n properly here on some systems.
             with self.assertRaises(JsonableError):
                 self.send_stream_message(self.example_email("othello"), "Denmark", message)
+
+    def test_ultra_long_rendering(self) -> None:
+        """A message with an ultra-long rendering throws an exception"""
+        msg = u'* a\n' * (MAX_MESSAGE_LENGTH // 5)  # Rendering is >20K characters
+
+        with self.simulated_markdown_failure():
+            with self.assertRaises(bugdown.BugdownRenderingException):
+                bugdown_convert(msg)
 
 
 class BugdownAvatarTestCase(ZulipTestCase):

@@ -109,9 +109,16 @@ label {
     box-shadow: 0px 0px 10px hsla(0, 0%, 0%, 0.1);
 }
 
+#change_email_modal,
+#change_full_name_modal {
+    width: 460px;
+}
+
 .admin-realm-description {
     height: 16em;
-    width: 36em;
+    width: 100%;
+    max-width: 500px;
+    box-sizing: border-box;
 }
 
 .padded-container {
@@ -162,13 +169,20 @@ label {
 }
 
 #uploaded_files_table > tr > td:nth-of-type(1),
+#admin_filters_table > tr > td:nth-of-type(1),
 .upload-file-name {
     width: 30%;
+    word-break: break-all;
 }
 
 td .button {
     margin: 2px 0px;
     box-shadow: none;
+}
+
+.settings-info-icon {
+    padding-left: 3px;
+    opacity: 0.9;
 }
 
 .settings-section {
@@ -324,6 +338,15 @@ input[type=checkbox] + .inline-block {
     margin-left: 10px;
 }
 
+.allow-subdomains,
+.new-realm-domain-allow-subdomains {
+    margin: 0 !important;
+}
+
+.realm_domains_info {
+    margin-bottom: 0px;
+}
+
 .admin-realm-form h3 {
     margin-bottom: 0px;
 }
@@ -332,8 +355,23 @@ input[type=checkbox] + .inline-block {
     margin-top: 10px;
 }
 
-.organization-submission {
+.org-settings-form .organization-submission {
     margin-top: 0px;
+}
+
+.admin-realm-form .subsection-header h3 {
+    display: inline;
+}
+
+.admin-realm-form .subsection-header div[class*="subsection-changes"] {
+    display: inline;
+}
+
+.admin-realm-form .subsection-header div[class*="subsection-changes"] button.show {
+    display: inline-block;
+    margin-top: -4px;
+    min-width: 80px;
+    line-height: 10px;
 }
 
 #default_language {
@@ -361,13 +399,10 @@ input[type=checkbox].inline-block {
     border-left: 0px;
 }
 
-.grey-bg {
-    background: hsl(0, 0%, 89%);
+.alert-word-information-box {
+    position: relative;
     padding: 10px;
     margin: 20px auto;
-    box-shadow: 0px 0px 2px hsla(0, 0%, 0%, 0.5);
-    position: relative;
-    font-size: 14px;
 }
 
 .green-bg {
@@ -388,6 +423,7 @@ input[type=checkbox].inline-block {
     #settings .settings-section .new-bot-form,
     #settings .settings-section .new-alert-word-form,
     #filter-settings .new-filter-form,
+    #profile-field-settings .new-profile-field-form,
     #settings .settings-section .notification-settings-form,
     #settings .settings-section .display-settings-form,
     #settings .settings-section .edit-bot-form-box {
@@ -399,6 +435,7 @@ input[type=checkbox].inline-block {
     #settings .settings-section .new-bot-form .control-label,
     #settings .settings-section .new-alert-word-form .control-label,
     #filter-settings .new-filter-form .control-label,
+    #profile-field-settings .new-profile-field-form .control-label,
     #settings .settings-section .edit-bot-form-box .control-label {
         display: block;
         width: 120px;
@@ -414,6 +451,7 @@ input[type=checkbox].inline-block {
     #settings .settings-section .new-bot-form .controls,
     #settings .settings-section .new-alert-word-form button,
     #filter-settings .new-filter-form .controls,
+    #profile-field-settings .new-profile-field-form .controls,
     #settings .settings-section .edit-bot-form-box .controls {
         margin: auto;
         text-align: center;
@@ -423,6 +461,50 @@ input[type=checkbox].inline-block {
 #organization .settings-section .settings-section-icon,
 #settings .settings-section .settings-section-icon {
     margin-right: 8px;
+}
+
+#settings_page .alert-notification:not(:empty) {
+    color: hsl(170, 47%, 54%);
+    display: inline-block !important;
+    vertical-align: top;
+    height: auto !important;
+    width: auto !important;
+
+    background: transparent;
+    border: 1px solid hsl(178, 100%, 40%);
+    color: hsl(178, 100%, 40%);
+
+    padding: 2px 5px;
+    border-radius: 4px;
+
+    margin-top: 14px;
+    margin-left: 10px;
+}
+
+#settings_page .alert-notification.alert-error {
+    color: hsl(2, 46%, 68%);
+    border-color: hsl(2, 46%, 68%);
+}
+
+#settings_page .alert-notification .loading_indicator_spinner {
+    width: 13px;
+    height: 20px;
+    margin: 0;
+}
+
+/* make the spinner green like the text and box. */
+#settings_page .alert-notification .loading_indicator_spinner svg path {
+    fill: hsl(178, 100%, 40%);
+}
+
+#settings_page .alert-notification .loading_indicator_text {
+    margin-top: 0px;
+    font-size: inherit;
+    vertical-align: top;
+}
+
+#settings_page .alert-notification img {
+    margin-right: 5px;
 }
 
 #notification-settings .notification-reminder {
@@ -472,21 +554,25 @@ input[type=checkbox].inline-block {
     max-width: 100%;
 }
 
-.add-new-emoji-box {
+.add-new-emoji-box,
+.add-new-user-group-box,
+.add-new-alert-word-box {
     margin-bottom: 20px;
 }
 
-.add-new-emoji-box .new-emoji-form {
+.add-new-emoji-box .new-emoji-form,
+.add-new-user-group-box .new-user-group-form,
+.add-new-alert-word-box .new-alert-word-form {
     margin: 10px 0px;
 }
 
 .add-new-emoji-box input[type=text],
+.add-new-user-group-box input[type=text],
 .add-new-default-stream-box input[type=text] {
     padding: 6px;
 }
 
-.add-new-emoji-box #emoji-file-name,
-.add-new-emoji-box #emoji_file_input_error {
+.add-new-emoji-box #emoji-file-name {
     width: 0;
     top: -19px;
     left: 3px;
@@ -498,22 +584,29 @@ input[type=checkbox].inline-block {
     font-style: italic;
 }
 
+#emoji_file_input_error {
+    vertical-align: middle;
+}
+
 .add-new-emoji-box #emoji-file-name {
     color: hsl(0, 0%, 66%);
 }
 
+.add-new-profile-field-box button,
 .add-new-filter-box button {
-    margin-left: calc(10em + 20px) !important;
+    margin-left: calc(10em - -20px) !important;
 }
 
 .grey-box .wrapper {
     margin: 10px 0px;
 }
 
+.admin_profile_fields_table,
 .admin_filters_table {
     margin-top: 20px;
 }
 
+#admin-profile-field-name-status,
 #admin-filter-pattern-status,
 #admin-filter-format-status {
     margin: 20px 0 0 0;
@@ -597,8 +690,6 @@ input[type=checkbox].inline-block {
     max-height: 220px;
     margin: 5px;
 
-    background-color: hsl(0, 0%, 100%);
-    border: 1px solid hsl(0, 0%, 86%);
     border-radius: 4px;
     box-sizing: border-box;
 
@@ -695,6 +786,7 @@ input[type=checkbox].inline-block {
 #get_api_key_box .control-label,
 .admin-emoji-form .control-label,
 .admin-filter-form .control-label,
+.admin-profile-field-form .control-label,
 .edit_bot_form .control-label {
     width: 10em;
     text-align: right;
@@ -786,6 +878,10 @@ input[type=checkbox].inline-block {
     min-width: initial !important;
 }
 
+.right.show .emoji_alt_code {
+    font-size: 1.2em;
+}
+
 #user-settings-avatar {
     border-radius: 5px;
     box-shadow: 0px 0px 10px hsla(0, 0%, 0%, 0.1);
@@ -795,8 +891,27 @@ input[type=checkbox].inline-block {
     transition: all 0.3s ease;
 }
 
-#user-settings-avatar:hover {
-    -webkit-filter: brightness(0.5);
+#user-settings-avatar:hover #user-avatar-block {
+    -webkit-filter: brightness(0.4);
+}
+
+#user-settings-avatar:hover #user-avatar-source {
+    visibility: visible;
+}
+
+#user-avatar-source {
+    margin-left: 10px;
+    width: 200px;
+    height: 20px;
+    position: absolute;
+    bottom: 19%;
+    left: 0%;
+    font-size: 0.9em;
+    visibility: hidden;
+}
+
+.white-color {
+    color: white;
 }
 
 #realm-settings-icon {
@@ -809,6 +924,105 @@ input[type=checkbox].inline-block {
 .invite-user-link i {
     text-decoration: none;
     margin-right: 5px;
+}
+
+#user-groups .user-group {
+    margin-bottom: 20px;
+    padding: 10px;
+    border-radius: 5px;
+}
+
+#user-groups .user-group h4 {
+    font-weight: normal;
+    margin: 0px;
+}
+
+#user-groups .user-group p {
+    font-weight: bold;
+    line-height: 2;
+    margin: 0px;
+}
+
+#user-groups .user-group h4 > .name {
+    font-weight: bold;
+}
+
+#user-groups .user-group span[contenteditable] {
+    display: inline-block;
+    word-break: break-all;
+}
+
+#user-groups .ntm {
+    cursor: not-allowed;
+}
+
+#user-groups .user-group span[contenteditable]:empty::before {
+    opacity: 0.5;
+    display: inline-block;
+    content: attr(data-placeholder);
+}
+
+#user-groups .user-group span[contenteditable]:focus,
+#user-groups .user-group span[contenteditable="true"]:hover {
+    border-bottom: 1px solid hsl(0, 0%, 80%);
+    outline: none;
+}
+
+#user-groups .user-group .pill-container .input[contenteditable]:empty::after {
+    content: attr(data-placeholder);
+    opacity: 0.5;
+}
+
+#user-groups .user-group h4 > .button {
+    vertical-align: 1px;
+}
+
+#user-groups .ntm h4 > .button {
+    cursor: not-allowed;
+    display: none;
+}
+
+#user-groups .ntm h4 > .button:hover {
+    border-color: hsl(4, 56%, 82%);
+}
+
+#user-groups .save-status {
+    vertical-align: middle;
+    height: auto;
+    width: auto;
+    background: transparent;
+    padding: 2px 5px;
+    border-radius: 4px;
+    margin-left: 10px;
+}
+
+#user-groups .save-status.saved {
+    display: none;
+    opacity: 0;
+    border: 1px solid hsl(178, 100%, 40%);
+    color: hsl(178, 100%, 40%);
+}
+
+#user-groups .save-status.cancel {
+    display: none;
+    opacity: 0;
+    border: 1px solid #333;
+    color: #333;
+}
+
+#user-groups .checkmark {
+    width: 13px;
+}
+
+#user-groups .delete {
+    float: right;
+}
+
+#user-groups .save-instructions {
+    display: none;
+    opacity: 0;
+    color: #333;
+    font-size: 0.9em;
 }
 
 /* -- new settings overlay -- */
@@ -864,6 +1078,12 @@ input[type=checkbox].inline-block {
     font-weight: 400;
     color: inherit;
     opacity: 0.6;
+}
+
+#settings_page h3 {
+    font-size: 1.5em;
+    font-weight: normal;
+    line-height: 1.5;
 }
 
 #settings_page .settings-header.mobile {
@@ -936,11 +1156,13 @@ input[type=checkbox].inline-block {
 
     pointer-events: none;
     transition: all 0.3s ease;
+    visibility: hidden;
 }
 
 #settings_page .form-sidebar.show {
     pointer-events: auto;
     transform: translateX(0px);
+    visibility: visible;
 }
 
 #settings_page .form-sidebar input[type=text] {
@@ -963,8 +1185,8 @@ input[type=checkbox].inline-block {
 }
 
 #settings_page .form-sidebar .title {
-    background-color: hsl(0, 0%, 98%);
     padding: 10px 20px;
+    background-color: hsl(0, 0%, 98%);
     border-bottom: 1px solid hsl(0, 0%, 86%);
 }
 
@@ -1025,15 +1247,74 @@ input[type=checkbox].inline-block {
     cursor: pointer;
 }
 
+#settings_page #change_password_modal {
+    width: auto;
+}
+
+#settings_page .custom_user_field {
+    padding-bottom: 20px;
+}
+
+#settings_page .custom_user_field textarea {
+    width: 320px;
+    height: 80px;
+}
+
+#settings_page .custom_user_field input[type=number]::-webkit-outer-spin-button,
+#settings_page .custom_user_field input[type=number]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+#settings_page .custom_user_field input[type=number] {
+    -moz-appearance: textfield;
+}
+
+#settings_page #change_password_modal .change_password_info,
+#settings_page #change_email_modal .change_email_info,
+#settings_page #change_full_name_modal .change_full_name_info {
+    margin: 10px;
+}
+
+#account-settings .custom_user_field input::placeholder,
+#account-settings .custom_user_field textarea::placeholder {
+    font-style: italic;
+    color: hsl(0, 0%, 66%);
+}
+
 #deactivation_user_modal.fade.in {
     top: calc(50% - 120px);
 }
 
-#deactivate_self_modal {
+.modal.fade.in {
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+#id_realm_create_stream_permission,
+#id_realm_bot_creation_policy {
+    width: 100%;
+}
+
+.m-t-10 {
+    margin-top: 10px;
+}
+
+#deactivate_self_modal,
+#deactivate-realm-modal {
     box-shadow: 0px 0px 75px hsla(0, 0%, 0%, 0.5);
     outline: 10000px solid hsla(0, 0%, 0%, 0.3);
     border: none;
     border-radius: 0px;
+}
+
+#do_deactivate_self_button .loader {
+    display: none;
+    vertical-align: top;
+    position: relative;
+    height: 30px;
+    margin-top: -10px;
+    top: 5px;
 }
 
 #id_realm_notifications_stream .dropdown-search > input[type=text],
@@ -1271,7 +1552,24 @@ thead .actions {
     width: 340px;
 }
 
+#service_name_list input[type=text] {
+    width: 340px;
+}
+
+.dropdown-title {
+    margin-bottom: 3px;
+}
+
 .invited-as-admin {
     opacity: 0.5;
     margin-left: 2px;
+}
+
+@-moz-document url-prefix() {
+    #settings_page select {
+        -moz-appearance: none;
+        background: url('../images/dropdown.png') right / 20px;
+        background-repeat: no-repeat;
+        padding-right: 20px;
+    }
 }

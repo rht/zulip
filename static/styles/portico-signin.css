@@ -8,7 +8,7 @@ html {
     align-items: center;
     justify-content: center;
 
-    min-height: calc(100vh - 407px);
+    min-height: calc(100vh - 402px);
 }
 
 .m-10 {
@@ -335,6 +335,10 @@ html {
     transition: border 0.3s ease;
 }
 
+.new-style .input-box input[type=email] {
+    margin-bottom: 10px;
+}
+
 .new-style .input-box label {
     position: absolute;
     top: 0px;
@@ -509,21 +513,21 @@ html {
     text-align: left;
 }
 
-.split-view .info-box .organization-name,
-.split-view .info-box .organization-path {
+.info-box .organization-name,
+.info-box .organization-path {
     max-width: 100%;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
 }
 
-.split-view .info-box .organization-name {
+.info-box .organization-name {
     font-size: 1.5em;
     font-weight: 300;
     line-height: 1.2;
 }
 
-.split-view .info-box .organization-path {
+.info-box .organization-path {
     font-weight: 400;
     color: hsl(0, 0%, 46%);
     margin-top: 5px;
@@ -544,7 +548,6 @@ html {
     color: hsl(0, 0%, 34%);
     font-weight: 600;
     text-align: center;
-    text-transform: uppercase;
 }
 
 .portico-page .or::before,
@@ -660,6 +663,14 @@ button.login-google-button {
     margin: 30px;
 }
 
+#registration .info-box {
+    margin: 10px 0px 0px 20px;
+}
+
+#registration .info-box .organization-name {
+    max-width: 228px;
+}
+
 #registration .input-box {
     display: block;
     text-align: center;
@@ -705,19 +716,25 @@ button.login-google-button {
     position: relative;
     padding-right: 10px;
 
-    width: 156px;
+    width: 150px;
 }
 
 #registration #id_team_subdomain.subdomain + .realm_subdomain_label {
-    float: right;
     margin-top: 12px;
-    margin-left: 10px;
+    margin-left: 180px;
+    display: inline-block;
 
     font-weight: normal;
+    font-size: inherit;
 }
 
 #registration #id_team_subdomain.subdomain {
     margin-top: 0px;
+}
+
+#registration #subdomain_section .inline-block {
+    width: 100%;
+    overflow-x: auto;
 }
 
 #registration #subdomain_section .or {
@@ -930,4 +947,14 @@ button.login-google-button {
     .flex {
         min-height: calc(100vh - 560px);
     }
+}
+
+#login_form .loader {
+    display: none;
+    vertical-align: top;
+    position: relative;
+
+    height: 30px;
+    margin-top: -10px;
+    top: 5px;
 }

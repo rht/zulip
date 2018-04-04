@@ -36,12 +36,12 @@ if __name__ == '__main__':
     with open('static/locale/en/translations.json') as f:
         data = json.load(f)
         frontend = check_capitalization(list(data.keys()))
-        frontend_errors, frontend_ignored = frontend
+        frontend_errors, frontend_ignored, banned_errors_front = frontend
 
     with open('static/locale/en/LC_MESSAGES/django.po') as f:
         rows = [r for r in DJANGO_PO_REGEX.findall(f.read()) if r]
         backend = check_capitalization(rows)
-        backend_errors, backend_ignored = backend
+        backend_errors, backend_ignored, banned_errors_back = backend
 
     if frontend_errors:
         print(WARNING + "Strings not properly capitalized in frontend:" + ENDC)
@@ -51,11 +51,19 @@ if __name__ == '__main__':
         print(WARNING + "Strings not properly capitalized in backend:" + ENDC)
         print('\n'.join(backend_errors))
 
+    if banned_errors_front:
+        print(WARNING + "Found banned words in frontend strings" + ENDC)
+        print('\n'.join(banned_errors_front))
+
+    if banned_errors_back:
+        print(WARNING + "Found banned words in backend strings" + ENDC)
+        print('\n'.join(banned_errors_back))
+
     if args.show_ignored:
         print(WARNING + "Strings which were ignored: " + ENDC)
         print('\n'.join(frontend_ignored + backend_ignored))
 
-    if frontend_errors or backend_errors:
+    if frontend_errors or backend_errors or banned_errors_back or banned_errors_front:
         # Point the user to the documentation on what the policy is.
         docs_url = "https://zulip.readthedocs.io/en/latest/translating/translating.html#capitalization"
         print(WARNING + "See " + docs_url + ENDC)

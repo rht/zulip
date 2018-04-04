@@ -94,8 +94,8 @@ exports.render_person = function (person) {
     return html;
 };
 
-exports.clear_rendered_persons = function () {
-    rendered.persons.clear();
+exports.clear_rendered_person = function (user_id) {
+    rendered.persons.del(user_id);
 };
 
 exports.render_user_group = function (user_group) {
@@ -124,6 +124,7 @@ exports.render_stream = function (stream) {
         html = exports.render_typeahead_item({
             primary: stream.name,
             secondary: desc,
+            is_unsubscribed: !stream.subscribed,
         });
         rendered.streams.set(stream.stream_id, html);
     }
@@ -263,27 +264,37 @@ exports.sort_languages = function (matches, query) {
     return results.matches.concat(results.rest);
 };
 
-exports.sort_recipients = function (matches, query, current_stream, current_subject) {
-    var name_results =  util.prefix_sort(query, matches, function (x) { return x.full_name; });
-    var email_results = util.prefix_sort(query, name_results.rest,
-        function (x) { return x.email; });
-
-    var matches_sorted = exports.sort_for_at_mentioning(
-        name_results.matches.concat(email_results.matches),
+exports.sort_recipients = function (users, query, current_stream, current_subject, groups) {
+    var users_name_results =  util.prefix_sort(query, users,
+        function (x) { return x.full_name; });
+    var result = exports.sort_for_at_mentioning(
+        users_name_results.matches,
         current_stream,
         current_subject
     );
+
+    var groups_results;
+    if (groups !== undefined) {
+        groups_results = util.prefix_sort(query, groups, function (x) { return x.name; });
+        result = result.concat(groups_results.matches);
+    }
+
+    var email_results = util.prefix_sort(query, users_name_results.rest,
+        function (x) { return x.email; });
+    result = result.concat(exports.sort_for_at_mentioning(
+        email_results.matches,
+        current_stream,
+        current_subject
+    ));
     var rest_sorted = exports.sort_for_at_mentioning(
         email_results.rest,
         current_stream,
         current_subject
     );
-    return matches_sorted.concat(rest_sorted);
-};
-
-exports.sort_user_groups = function (matches, query) {
-    var results = util.prefix_sort(query, matches, function (x) { return x.name; });
-    return results.matches.concat(results.rest);
+    if (groups !== undefined) {
+        rest_sorted = rest_sorted.concat(groups_results.rest);
+    }
+    return result.concat(rest_sorted);
 };
 
 exports.sort_emojis = function (matches, query) {
@@ -295,12 +306,16 @@ exports.sort_emojis = function (matches, query) {
 // Gives stream a score from 0 to 3 based on its activity
 function activity_score(sub) {
     var stream_score = 0;
-    if (sub.pin_to_top) {
-        stream_score += 2;
-    }
-    // Note: A pinned stream may accumulate a 3rd point if it is active
-    if (stream_data.is_active(sub)) {
-        stream_score += 1;
+    if (!sub.subscribed) {
+        stream_score = -1;
+    } else {
+        if (sub.pin_to_top) {
+            stream_score += 2;
+        }
+        // Note: A pinned stream may accumulate a 3rd point if it is active
+        if (stream_data.is_active(sub)) {
+            stream_score += 1;
+        }
     }
     return stream_score;
 }

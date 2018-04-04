@@ -11,8 +11,7 @@
 }
 
 #streams_inline_cog,
-#streams_filter_icon,
-#join_unsub_stream {
+#streams_filter_icon {
     float: right;
     opacity: 0.50;
     font-size: 13px;
@@ -21,13 +20,12 @@
 }
 
 #streams_inline_cog:hover,
-#streams_filter_icon:hover,
-#join_unsub_stream:hover {
+#streams_filter_icon:hover {
     opacity: 1;
     cursor: pointer;
 }
 
-#streams_header #join_unsub_stream {
+#streams_header {
     margin-top: 3px;
 }
 
@@ -81,21 +79,13 @@
     width: 100%;
 }
 
-#stream-filters-container .ps-scrollbar-y-rail {
-    right: 0px !important;
-    width: 4px !important;
-}
-
-#stream-filters-container .ps-scrollbar-y {
-    width: 4px !important;
-}
-
 .stream-list-filter {
     margin-left: 1ex;
 }
 
 #global_filters li:hover,
-#stream_filters li:hover {
+#stream_filters li:hover,
+#stream_filters li.highlighted_stream {
     background-color: hsl(93, 19%, 88%);
 }
 
@@ -133,11 +123,6 @@ li.active-sub-filter {
     opacity: 1;
 }
 
-li.hidden-filter {
-    visibility: hidden;
-    display: none;
-}
-
 #left-sidebar .filter-icon {
     display: inline-block;
     width: 18px;
@@ -168,6 +153,10 @@ li.hidden-filter {
 
 #global_filters .global-filter a {
     display: block;
+}
+
+.left-sidebar li a.conversation-partners:hover {
+    text-decoration: underline;
 }
 
 #global_filters .global-filter i.icon-vector-home {
@@ -220,6 +209,10 @@ li.hidden-filter {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.left-sidebar li a.topic-name:hover {
+    text-decoration: underline;
 }
 
 .topic-unread-count,
@@ -361,10 +354,6 @@ ul.topic-list {
     font-weight: normal;
 }
 
-#streams_header a {
-    text-decoration: none;
-}
-
 ul.expanded_private_messages {
     list-style-type: none;
     font-weight: 300;
@@ -421,7 +410,7 @@ li.expanded_private_message a {
 }
 
 #global_filters i {
-    opacity: 0.5;
+    opacity: 0.7;
 }
 
 #topics_header {
@@ -444,6 +433,7 @@ li.expanded_private_message a {
 #streams_header {
     margin-right: 0px;
     padding-left: 10px;
+    cursor: pointer;
 }
 
 #stream_filters .inactive_stream {

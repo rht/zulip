@@ -16,8 +16,8 @@ var backend_only_markdown_re = [
     // Inline image previews, check for contiguous chars ending in image suffix
     // To keep the below regexes simple, split them out for the end-of-message case
 
-    /[^\s]*(?:\.bmp|\.gif|\.jpg|\.jpeg|\.png|\.webp)\s+/m,
-    /[^\s]*(?:\.bmp|\.gif|\.jpg|\.jpeg|\.png|\.webp)$/m,
+    /[^\s]*(?:(?:\.bmp|\.gif|\.jpg|\.jpeg|\.png|\.webp)\)?)\s+/m,
+    /[^\s]*(?:(?:\.bmp|\.gif|\.jpg|\.jpeg|\.png|\.webp)\)?)$/m,
 
     // Twitter and youtube links are given previews
 
@@ -42,16 +42,8 @@ exports.contains_backend_only_syntax = function (content) {
     return markedup !== undefined || false_filter_match !== undefined;
 };
 
-function push_uniquely(lst, elem) {
-    if (!_.contains(lst, elem)) {
-        lst.push(elem);
-    }
-}
-
 exports.apply_markdown = function (message) {
-    if (message.flags === undefined) {
-        message.flags = [];
-    }
+    message_store.init_booleans(message);
 
     // Our python-markdown processor appends two \n\n to input
     var options = {
@@ -59,36 +51,35 @@ exports.apply_markdown = function (message) {
             var person = people.get_by_name(name);
             if (person !== undefined) {
                 if (people.is_my_user_id(person.user_id)) {
-                    push_uniquely(message.flags, 'mentioned');
+                    message.mentioned = true;
+                    message.mentioned_me_directly = true;
                 }
                 return '<span class="user-mention" data-user-id="' + person.user_id + '">' +
                        '@' + person.full_name +
                        '</span>';
             } else if (name === 'all' || name === 'everyone') {
-                push_uniquely(message.flags, 'mentioned');
+                message.mentioned = true;
                 return '<span class="user-mention" data-user-id="*">' +
                        '@' + name +
                        '</span>';
             }
-            return undefined;
+            return;
         },
         groupMentionHandler: function (name) {
             var group = user_groups.get_user_group_from_name(name);
             if (group !== undefined) {
                 if (user_groups.is_member_of(group.id, people.my_current_user_id())) {
-                    push_uniquely(message.flags, 'mentioned');
+                    message.mentioned = true;
                 }
                 return '<span class="user-group-mention" data-user-group-id="' + group.id + '">' +
                        '@' + group.name +
                        '</span>';
             }
-            return undefined;
+            return;
         },
     };
     message.content = marked(message.raw_content + '\n\n', options).trim();
-    message.is_me_message = (message.raw_content.indexOf('/me ') === 0 &&
-                             message.content.indexOf('<p>') === 0 &&
-                             message.content.lastIndexOf('</p>') === message.content.length - 4);
+    message.is_me_message = exports.is_status_message(message.raw_content, message.content);
 };
 
 exports.add_subject_links = function (message) {
@@ -117,6 +108,13 @@ exports.add_subject_links = function (message) {
         }
     });
     message.subject_links = links;
+};
+
+exports.is_status_message = function (raw_content, content) {
+    return (raw_content.indexOf('/me ') === 0 &&
+            raw_content.indexOf('\n') === -1 &&
+            content.indexOf('<p>') === 0 &&
+            content.lastIndexOf('</p>') === content.length - 4);
 };
 
 function escape(html, encode) {
@@ -167,11 +165,11 @@ function handleAvatar(email) {
 function handleStream(streamName) {
     var stream = stream_data.get_sub(streamName);
     if (stream === undefined) {
-        return undefined;
+        return;
     }
+    var href = window.location.origin + '/#narrow/stream/' + hash_util.encode_stream_name(stream.name);
     return '<a class="stream" data-stream-id="' + stream.stream_id + '" ' +
-        'href="' + window.location.origin + '/#narrow/stream/' +
-        hash_util.encodeHashComponent(stream.name) + '"' +
+        'href="' + href + '"' +
         '>' + '#' + stream.name + '</a>';
 
 }
@@ -360,6 +358,16 @@ exports.initialize = function () {
         return fenced_code.process_fenced_code(src);
     }
 
+    function preprocess_translate_emoticons(src) {
+        if (!page_params.translate_emoticons) {
+            return src;
+        }
+
+        // In this scenario, the message has to be from the user, so the only
+        // requirement should be that they have the setting on.
+        return emoji.translate_emoticons_to_names(src);
+    }
+
     // Disable ordered lists
     // We used GFM + tables, so replace the list start regex for that ruleset
     // We remove the |[\d+]\. that matches the numbering in a numbered list
@@ -408,7 +416,11 @@ exports.initialize = function () {
         realmFilterHandler: handleRealmFilter,
         texHandler: handleTex,
         renderer: r,
-        preprocessors: [preprocess_code_blocks, preprocess_auto_olists],
+        preprocessors: [
+            preprocess_code_blocks,
+            preprocess_auto_olists,
+            preprocess_translate_emoticons,
+        ],
     });
 
 };

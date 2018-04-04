@@ -1,6 +1,7 @@
 var noop = function () {};
 
 set_global('document', 'document-stub');
+set_global('window', {});
 set_global('$', function () {
     return {
         trigger: noop,
@@ -32,13 +33,28 @@ set_global('settings_emoji', {
     update_custom_emoji_ui: noop,
 });
 
+set_global('settings_account', {
+    update_email_change_display: noop,
+    update_name_change_display: noop,
+});
+set_global('settings_display', {
+    update_page: noop,
+});
+
+set_global('settings_notifications', {
+    update_page: noop,
+});
+
 set_global('settings_org', {
-    reset_realm_default_language: noop,
-    toggle_allow_message_editing_pencil: noop,
-    toggle_email_change_display: noop,
-    toggle_name_change_display: noop,
-    update_message_retention_days: noop,
-    update_realm_description: noop,
+    sync_realm_settings: noop,
+});
+
+set_global('message_edit', {
+    update_message_topic_editing_pencil: noop,
+});
+
+set_global('settings_bots', {
+    update_bot_permissions_ui: noop,
 });
 
 // page_params is highly coupled to dispatching now
@@ -130,6 +146,9 @@ var event_fixtures = {
         op: 'add',
         message_id: 128,
         emoji_name: 'anguished_pig',
+        user: {
+            id: "1",
+        },
     },
 
     reaction__remove: {
@@ -137,6 +156,9 @@ var event_fixtures = {
         op: 'remove',
         message_id: 256,
         emoji_name: 'angery',
+        user: {
+            id: "1",
+        },
     },
 
     // Please keep this next section un-nested, as we want this to partly
@@ -176,6 +198,27 @@ var event_fixtures = {
         value: false,
     },
 
+    realm__update__bot_creation_policy: {
+        type: 'realm',
+        op: 'update',
+        property: 'bot_creation_policy',
+        value: 1,
+    },
+
+    realm__update__disallow_disposable_email_addresses: {
+        type: 'realm',
+        op: 'update',
+        property: 'disallow_disposable_email_addresses',
+        value: false,
+    },
+
+    realm__update_default_twenty_four_hour_time: {
+        type: 'realm',
+        op: 'update',
+        property: 'default_twenty_four_hour_time',
+        value: false,
+    },
+
     realm__update_dict__default: {
         type: 'realm',
         op: 'update_dict',
@@ -201,7 +244,17 @@ var event_fixtures = {
         op: 'remove',
         bot: {
             email: 'the-bot@example.com',
+            user_id: '42',
             full_name: 'The Bot',
+        },
+    },
+
+    realm_bot__delete: {
+        type: 'realm_bot',
+        op: 'delete',
+        bot: {
+            email: 'the-bot@example.com',
+            user_id: '42',
         },
     },
 
@@ -376,17 +429,12 @@ var event_fixtures = {
         type: 'update_display_settings',
         setting_name: 'default_language',
         setting: 'fr',
+        language_name: 'French',
     },
 
     update_display_settings__left_side_userlist: {
         type: 'update_display_settings',
         setting_name: 'left_side_userlist',
-        setting: true,
-    },
-
-    update_display_settings__emoji_alt_code: {
-        type: 'update_display_settings',
-        setting_name: 'emoji_alt_code',
         setting: true,
     },
 
@@ -399,6 +447,12 @@ var event_fixtures = {
     update_display_settings__high_contrast_mode: {
         type: 'update_display_settings',
         setting_name: 'high_contrast_mode',
+        setting: true,
+    },
+
+    update_display_settings__translate_emoticons: {
+        type: 'update_display_settings',
+        setting_name: 'translate_emoticons',
         setting: true,
     },
 
@@ -425,6 +479,17 @@ var event_fixtures = {
     delete_message: {
         type: 'delete_message',
         message_id: 1337,
+        message_type: "stream",
+        stream_id: 99,
+        topic: 'topic1',
+    },
+
+    custom_profile_fields: {
+        type: 'custom_profile_fields',
+        fields: [
+            {id: 1, name: 'teams', type: 1},
+            {id: 2, name: 'hobbies', type: 1},
+        ],
     },
 };
 
@@ -443,6 +508,16 @@ with_overrides(function (override) {
     var event = event_fixtures.alert_words;
     dispatch(event);
     assert_same(global.alert_words.words, ['fire', 'lunch']);
+
+});
+
+with_overrides(function (override) {
+    // custom profile fields
+    var event = event_fixtures.custom_profile_fields;
+    override('settings_profile_fields.populate_profile_fields', noop);
+    override('settings_profile_fields.report_success', noop);
+    dispatch(event);
+    assert_same(global.page_params.custom_profile_fields, event.fields);
 
 });
 
@@ -545,6 +620,12 @@ with_overrides(function (override) {
     event = event_fixtures.realm__update__restricted_to_domain;
     test_realm_boolean(event, 'realm_restricted_to_domain');
 
+    event = event_fixtures.realm__update__disallow_disposable_email_addresses;
+    test_realm_boolean(event, 'realm_disallow_disposable_email_addresses');
+
+    event = event_fixtures.realm__update__create_stream_by_admins_only;
+    test_realm_boolean(event, 'realm_create_stream_by_admins_only');
+
     event = event_fixtures.realm__update_dict__default;
     page_params.realm_allow_message_editing = false;
     page_params.realm_message_content_edit_limit_seconds = 0;
@@ -575,8 +656,21 @@ with_overrides(function (override) {
             override('bot_data.deactivate', bot_stub.f);
             override('settings_users.update_user_data', admin_stub.f);
             dispatch(event);
-            var args = bot_stub.get_args('email');
-            assert_same(args.email, event.bot.email);
+            var args = bot_stub.get_args('user_id');
+            assert_same(args.user_id, event.bot.user_id);
+
+            admin_stub.get_args('update_user_id', 'update_bot_data');
+        });
+    });
+
+    event = event_fixtures.realm_bot__delete;
+    global.with_stub(function (bot_stub) {
+        global.with_stub(function (admin_stub) {
+            override('bot_data.delete', bot_stub.f);
+            override('settings_users.update_user_data', admin_stub.f);
+            dispatch(event);
+            var args = bot_stub.get_args('bot_id');
+            assert_same(args.bot_id, event.bot.user_id);
 
             admin_stub.get_args('update_user_id', 'update_bot_data');
         });
@@ -590,8 +684,8 @@ with_overrides(function (override) {
 
             dispatch(event);
 
-            var args = bot_stub.get_args('email', 'bot');
-            assert_same(args.email, event.bot.email);
+            var args = bot_stub.get_args('user_id', 'bot');
+            assert_same(args.user_id, event.bot.user_id);
             assert_same(args.bot, event.bot);
 
             args = admin_stub.get_args('update_user_id', 'update_bot_data');
@@ -799,11 +893,10 @@ with_overrides(function (override) {
     dispatch(event);
     assert_same(page_params.twenty_four_hour_time, true);
 
-    event = event_fixtures.update_display_settings__emoji_alt_code;
-    page_params.emoji_alt_code = false;
+    event = event_fixtures.update_display_settings__translate_emoticons;
+    page_params.translate_emoticons = false;
     dispatch(event);
-    assert_same(page_params.emoji_alt_code, true);
-
+    assert_same(page_params.translate_emoticons, true);
 });
 
 with_overrides(function (override) {
@@ -842,13 +935,35 @@ with_overrides(function (override) {
     });
 });
 
+// mark_message_as_read requires message_store and these dependencies.
+zrequire('unread_ops');
+zrequire('unread');
+zrequire('topic_data');
+zrequire('stream_list');
+set_global('message_store', {});
+
 with_overrides(function (override) {
     // delete_message
     var event = event_fixtures.delete_message;
+
+    override('stream_list.update_streams_sidebar', noop);
     global.with_stub(function (stub) {
         override('ui.remove_message', stub.f);
         dispatch(event);
         var args = stub.get_args('message_id');
         assert_same(args.message_id, 1337);
+    });
+    global.with_stub(function (stub) {
+        override('unread_ops.process_read_messages_event', stub.f);
+        dispatch(event);
+        var args = stub.get_args('message_ids');
+        assert_same(args.message_ids, [1337]);
+    });
+    global.with_stub(function (stub) {
+        override('topic_data.remove_message', stub.f);
+        dispatch(event);
+        var args = stub.get_args('opts');
+        assert_same(args.opts.stream_id, 99);
+        assert_same(args.opts.topic_name, 'topic1');
     });
 });

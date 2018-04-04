@@ -189,6 +189,12 @@
       "text_content": "I  like software  love hardware"
     },
     {
+      "name": "strikthrough_link",
+      "input": "~~test http://xx.xx link~~",
+      "expected_output": "<p><del>test <a href=\"http://xx.xx\" target=\"_blank\" title=\"http://xx.xx\">http://xx.xx</a> link</del></p>",
+      "text_content": "test http://xx.xx link"
+    },
+    {
       "name": "underscore_disabled",
       "input": "_foo_",
       "expected_output": "<p>_foo_</p>"
@@ -219,6 +225,12 @@
       "name": "star_strong",
       "input": "**foo**",
       "expected_output": "<p><strong>foo</strong></p>",
+      "text_content": "foo"
+    },
+    {
+      "name": "star_strong_em",
+      "input": "***foo***",
+      "expected_output": "<p><strong><em>foo</em></strong></p>",
       "text_content": "foo"
     },
     {
@@ -259,6 +271,13 @@
       "text_content": "Google logo today: https:\/\/www.google.com\/images\/srpr\/logo4w.png\nKinda boring\n"
     },
     {
+      "name": "blockquote_inline_image",
+      "input": ">Google logo today:\n>https://www.google.com/images/srpr/logo4w.png\n>Kinda boring",
+      "expected_output": "<blockquote>\n<p>Google logo today:<br>\n<a href=\"https://www.google.com/images/srpr/logo4w.png\" target=\"_blank\" title=\"https://www.google.com/images/srpr/logo4w.png\">https://www.google.com/images/srpr/logo4w.png</a><br>\nKinda boring</p>\n<div class=\"message_inline_image\"><a href=\"https://www.google.com/images/srpr/logo4w.png\" target=\"_blank\" title=\"https://www.google.com/images/srpr/logo4w.png\"><img src=\"https://www.google.com/images/srpr/logo4w.png\"></a></div></blockquote>",
+      "backend_only_rendering": true,
+      "text_content": "\nGoogle logo today:\nhttps:\/\/www.google.com\/images\/srpr\/logo4w.png\nKinda boring\n"
+    },
+    {
       "name": "two_inline_images",
       "input": "Google logo today: https://www.google.com/images/srpr/logo4w.png\nKinda boringGoogle logo today: https://www.google.com/images/srpr/logo4w.png\nKinda boring",
       "expected_output": "<p>Google logo today: <a href=\"https://www.google.com/images/srpr/logo4w.png\" target=\"_blank\" title=\"https://www.google.com/images/srpr/logo4w.png\">https://www.google.com/images/srpr/logo4w.png</a><br>\nKinda boringGoogle logo today: <a href=\"https://www.google.com/images/srpr/logo4w.png\" target=\"_blank\" title=\"https://www.google.com/images/srpr/logo4w.png\">https://www.google.com/images/srpr/logo4w.png</a><br>\nKinda boring</p>\n<div class=\"message_inline_image\"><a href=\"https://www.google.com/images/srpr/logo4w.png\" target=\"_blank\" title=\"https://www.google.com/images/srpr/logo4w.png\"><img src=\"https://www.google.com/images/srpr/logo4w.png\"></a></div><div class=\"message_inline_image\"><a href=\"https://www.google.com/images/srpr/logo4w.png\" target=\"_blank\" title=\"https://www.google.com/images/srpr/logo4w.png\"><img src=\"https://www.google.com/images/srpr/logo4w.png\"></a></div>",
@@ -266,10 +285,24 @@
       "text_content": "Google logo today: https:\/\/www.google.com\/images\/srpr\/logo4w.png\nKinda boringGoogle logo today: https:\/\/www.google.com\/images\/srpr\/logo4w.png\nKinda boring\n"
     },
     {
+      "name": "bulleted_list_inlining",
+      "input": "* Google?\n* Google. https://www.google.com/images/srpr/logo4w.png\n* Google!",
+      "expected_output": "<ul>\n<li>Google?</li>\n<li>Google. <a href=\"https://www.google.com/images/srpr/logo4w.png\" target=\"_blank\" title=\"https://www.google.com/images/srpr/logo4w.png\">https://www.google.com/images/srpr/logo4w.png</a><div class=\"message_inline_image\"><a href=\"https://www.google.com/images/srpr/logo4w.png\" target=\"_blank\" title=\"https://www.google.com/images/srpr/logo4w.png\"><img src=\"https://www.google.com/images/srpr/logo4w.png\"></a></div></li>\n<li>Google!</li>\n</ul>",
+      "backend_only_rendering": true,
+      "text_content": "\nGoogle?\nGoogle. https://www.google.com/images/srpr/logo4w.png\nGoogle!\n"
+    },
+    {
       "name": "only_inline_image",
       "input": "https://www.google.com/images/srpr/logo4w.png",
       "expected_output": "<div class=\"message_inline_image\"><a href=\"https://www.google.com/images/srpr/logo4w.png\" target=\"_blank\" title=\"https://www.google.com/images/srpr/logo4w.png\"><img src=\"https://www.google.com/images/srpr/logo4w.png\"></a></div>",
       "backend_only_rendering": true
+    },
+    {
+      "name": "only_named_inline_image",
+      "input": "[Google Link](https://www.google.com/images/srpr/logo4w.png)",
+      "expected_output": "<p><a href=\"https://www.google.com/images/srpr/logo4w.png\" target=\"_blank\" title=\"https://www.google.com/images/srpr/logo4w.png\">Google Link</a></p>\n<div class=\"message_inline_image\"><a href=\"https://www.google.com/images/srpr/logo4w.png\" target=\"_blank\" title=\"Google Link\"><img src=\"https://www.google.com/images/srpr/logo4w.png\"></a></div>",
+      "backend_only_rendering": true,
+      "text_content": "Google Link\n"
     },
     {
       "name": "only_non_image_link",
@@ -309,9 +342,59 @@
     },
     {
       "name": "many_emoji",
-      "input":  "test :smile: again :poop:\n:) foo:)bar x::y::z :wasted waste: :fakeemojithisshouldnotrender:",
-      "expected_output": "<p>test <span class=\"emoji emoji-1f604\" title=\"smile\">:smile:</span> again <span class=\"emoji emoji-1f4a9\" title=\"poop\">:poop:</span><br>\n:) foo:)bar x::y::z :wasted waste: :fakeemojithisshouldnotrender:</p>",
-      "text_content": "test \ud83d\ude04 again \ud83d\udca9\n:) foo:)bar x::y::z :wasted waste: :fakeemojithisshouldnotrender:"
+      "input":  "test :smile: again :poop:\n foobar x::y::z :wasted waste: :fakeemojithisshouldnotrender:",
+      "expected_output": "<p>test <span class=\"emoji emoji-1f604\" title=\"smile\">:smile:</span> again <span class=\"emoji emoji-1f4a9\" title=\"poop\">:poop:</span><br>\n foobar x::y::z :wasted waste: :fakeemojithisshouldnotrender:</p>",
+      "text_content": "test \ud83d\ude04 again \ud83d\udca9\n foobar x::y::z :wasted waste: :fakeemojithisshouldnotrender:"
+    },
+    {
+      "name": "translate_emoticons_not_enabled",
+      "input": ":)",
+      "expected_output": "<p>:)</p>",
+      "text_content": ":)",
+      "translate_emoticons": false
+    },
+    {
+      "name": "translate_emoticons_enabled",
+      "input": ":)",
+      "expected_output": "<p><span class=\"emoji emoji-1f603\" title=\"smiley\">:smiley:</span></p>",
+      "text_content": "\ud83d\ude03",
+      "translate_emoticons": true
+    },
+    {
+      "name": "translate_emoticons",
+      "input":  ":) foo :( bar <3 with space : ) real emoji :smiley:",
+      "expected_output": "<p><span class=\"emoji emoji-1f603\" title=\"smiley\">:smiley:</span> foo <span class=\"emoji emoji-1f641\" title=\"slightly frowning face\">:slightly_frowning_face:</span> bar <span class=\"emoji emoji-2764\" title=\"heart\">:heart:</span> with space : ) real emoji <span class=\"emoji emoji-1f603\" title=\"smiley\">:smiley:</span></p>",
+      "text_content": "\ud83d\ude03 foo \ud83d\ude41 bar \u2764 with space : ) real emoji \ud83d\ude03",
+      "translate_emoticons": true
+    },
+    {
+      "name": "translate_emoticons_whitepsace",
+      "input":  "a:) ;)b",
+      "expected_output": "<p>a:) ;)b</p>",
+      "text_content": "a:) ;)b",
+      "translate_emoticons": true
+    },
+    {
+      "name": "translate_emoticons_in_code",
+      "input":  "`:)`",
+      "expected_output": "<p><code>:)</code></p>",
+      "text_content": ":)",
+      "translate_emoticons": true
+    },
+    {
+      "name": "translate_emoticons_at_sentence_end",
+      "input": "Translate this :).",
+      "expected_output": "<p>Translate this <span class=\"emoji emoji-1f603\" title=\"smiley\">:smiley:</span>.</p>",
+      "text_content": "Translate this \ud83d\ude03.",
+      "translate_emoticons": true
+    },
+    {
+      "name": "translate_emoticons_between_symbols",
+      "input": "Translate this !:)?",
+      "expected_output": "<p>Translate this !<span class=\"emoji emoji-1f603\" title=\"smiley\">:smiley:</span>?</p>",
+      "marked_expected_output": "<p>Translate this !:)?</p>",
+      "text_content": "Translate this !\ud83d\ude03?",
+      "translate_emoticons": true
     },
     {
       "name": "random_emoji_1",
@@ -513,19 +596,6 @@
       "input": "`!gravatar(username@example.com)`",
       "expected_output": "<p><code>!gravatar(username@example.com)</code></p>",
       "text_content": "!gravatar(username@example.com)"
-    },
-    {
-      "name": "stream_subscribe_button",
-      "input": "!_stream_subscribe_button(streamname)",
-      "expected_output": "<p><span class=\"inline-subscribe\" data-stream-name=\"streamname\"><button class=\"inline-subscribe-button btn\">Subscribe to streamname</button><span class=\"inline-subscribe-error\"></span></span></p>",
-      "marked_expected_output": "<p>!_stream_subscribe_button(streamname)</p>",
-      "text_content": "Subscribe to streamname"
-    },
-    {
-      "name": "stream_subscribe_button_escaped",
-      "input": "`!_stream_subscribe_button(streamname)`",
-      "expected_output": "<p><code>!_stream_subscribe_button(streamname)</code></p>",
-      "text_content": "!_stream_subscribe_button(streamname)"
     },
     {
       "name": "tex_inline",

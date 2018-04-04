@@ -26,6 +26,11 @@ if EXTERNAL_HOST is None:
         REALM_HOSTS = {
             'zulip': 'localhost:9991'
         }
+else:
+    REALM_HOSTS = {
+        'zulip': EXTERNAL_HOST,
+    }
+
 ALLOWED_HOSTS = ['*']
 
 # Uncomment extra backends if you want to test with them.  Note that
@@ -41,18 +46,21 @@ EXTERNAL_URI_SCHEME = "http://"
 EMAIL_GATEWAY_PATTERN = "%s@" + EXTERNAL_HOST
 NOTIFICATION_BOT = "notification-bot@zulip.com"
 ERROR_BOT = "error-bot@zulip.com"
-NEW_USER_BOT = "new-user-bot@zulip.com"
 EMAIL_GATEWAY_BOT = "emailgateway@zulip.com"
 PHYSICAL_ADDRESS = "Zulip Headquarters, 123 Octo Stream, South Pacific Ocean"
 EXTRA_INSTALLED_APPS = ["zilencer", "analytics"]
 # Disable Camo in development
 CAMO_URI = ''
+
 OPEN_REALM_CREATION = True
+INVITES_MIN_USER_AGE_DAYS = 0
 
 EMBEDDED_BOTS_ENABLED = True
 
 SAVE_FRONTEND_STACKTRACES = True
 EVENT_LOGS_ENABLED = True
+STAGING_ERROR_NOTIFICATIONS = True
+
 SYSTEM_ONLY_REALMS = set()  # type: Set[str]
 USING_PGROONGA = True
 # Flush cache after migration.
@@ -73,3 +81,9 @@ EMAIL_HOST_USER = ""
 # Two factor authentication: Use the fake backend for development.
 TWO_FACTOR_CALL_GATEWAY = 'two_factor.gateways.fake.Fake'
 TWO_FACTOR_SMS_GATEWAY = 'two_factor.gateways.fake.Fake'
+
+# Make sendfile use django to serve files in development
+SENDFILE_BACKEND = 'sendfile.backends.development'
+
+# Set this True to send all hotspots in development
+ALWAYS_SEND_ALL_HOTSPOTS = False  # type: bool

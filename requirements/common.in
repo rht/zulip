@@ -3,16 +3,16 @@
 # and requirements/prod.txt.
 # See requirements/README.md for more detail.
 # Django itself
-Django==1.11.6
+Django==1.11.11
 
 # needed for mypy TypedDict
 mypy_extensions==0.3.0
 
 # Needed for rendering backend templates
-Jinja2==2.9.6
+Jinja2==2.10
 
 # Needed for markdown processing
-Markdown==2.6.9
+Markdown==2.6.11
 MarkupSafe==1.0
 Pygments==2.2.0
 
@@ -20,13 +20,13 @@ Pygments==2.2.0
 ipython==6.2.1
 
 # Needed for Image Processing
-Pillow==4.3.0
+Pillow==5.0.0
 
 # Needed for building complex DB queries
-SQLAlchemy==1.1.14
+SQLAlchemy==1.2.6
 
 # Needed for password hashing
-argon2-cffi==16.3.0
+argon2-cffi==18.1.0
 
 # Needed for Tornado >3.2 compatibility
 backports-abc==0.5
@@ -37,22 +37,22 @@ backports.ssl-match-hostname==3.5.0.1
 # Needed for S3 file uploads
 boto==2.48.0
 
-certifi==2017.7.27.1
+certifi==2018.1.18
 
 # Used for scrapy as well as argon2
-cffi==1.11.2
+cffi==1.11.5
 
 chardet==3.0.4
 
 # Pinned version because older versions don't compile on newer Linux.
 # Not actually a direct dependency.
-cryptography==2.1.2
+cryptography==2.2.2
 
 # Needed for integrations
 defusedxml==0.5.0
 
 # Needed for LDAP support
-django-auth-ldap==1.2.16
+django-auth-ldap==1.3.0
 
 # Django extension providing bitfield support
 django-bitfield==1.9.3
@@ -68,18 +68,18 @@ python-gcm==0.4
 gitdb==0.6.4
 
 # Needed for Google Apps mobile auth
-google-api-python-client==1.6.4
+google-api-python-client==1.6.6
 
 # Needed for the email mirror
-html2text==2017.10.4
-httplib2==0.10.3
+html2text==2018.1.9
+httplib2==0.11.3
 -e git+https://github.com/zulip/talon.git@7d8bdc4dbcfcc5a73298747293b99fe53da55315#egg=talon==1.2.10.zulip1
 
 # Needed for inlining the CSS in emails
 premailer==3.1.1
 
 # Needed for JWT-based auth
-PyJWT==1.5.3
+PyJWT==1.6.1
 
 # Needed for including other markdown files for user docs
 markdown-include==0.5.1
@@ -88,20 +88,20 @@ markdown-include==0.5.1
 mock==2.0.0
 
 oauth2client==4.1.2
-oauthlib==2.0.6
+oauthlib==2.0.7
 
 # Enhanced HTTPS support for httplib and urllib2 using PyOpenSSL
 # Needed by requests to send https request to some sites.
-ndg-httpsclient==0.4.3
+ndg-httpsclient==0.4.4
 
 # Needed to access rabbitmq
-pika==0.11.0
+pika==0.11.2
 
 # Needed to access our database
-psycopg2==2.7.3.2
+psycopg2==2.7.4 --no-binary psycopg2
 
-pyasn1==0.3.7
-pyasn1-modules==0.1.5
+pyasn1==0.4.2
+pyasn1-modules==0.2.1
 pycrypto==2.6.1
 
 # Needed for memcached usage
@@ -111,7 +111,7 @@ pylibmc==1.5.2
 python-dateutil==2.6.1
 
 # Needed for timezone work
-pytz==2017.2
+pytz==2018.3
 
 # Needed for redis
 redis==2.10.6
@@ -130,10 +130,10 @@ sockjs-tornado==1.0.3
 sourcemap==0.2.1
 
 # Tornado used for server->client push system
-tornado==4.5.2
+tornado==4.5.3
 
 # Needed for Python static typing
-typing==3.6.2
+typing==3.6.4
 
 # Fast JSON parser
 -e git+https://github.com/zulip/ultrajson@70ac02bec#egg=ujson==1.35+git
@@ -141,21 +141,21 @@ typing==3.6.2
 uritemplate==3.0.0
 
 # Django extension for static asset pipeline
-django-pipeline==1.6.13
+django-pipeline==1.6.14
 
 # Django extension for serving webpack modules
-django-webpack-loader==0.5.0
+django-webpack-loader==0.6.0
 
 # Needed for iOS push notifications
 apns2==0.3.0
 
-python-twitter==3.3
+python-twitter==3.4.1
 
 # To parse po files
-polib==1.0.8
+polib==1.1.0
 
 # Needed for cloning virtual environments
--e git+https://github.com/zulip/virtualenv-clone.git@44e831da39ffb6b9bb5c7d103d98babccdca0456#egg=virtualenv-clone==0.2.6.zulip1
+virtualenv-clone==0.3.0
 
 # Needed for reading json as stream
 ijson==2.3
@@ -167,21 +167,27 @@ pyoembed==0.1.2
 # The Zulip API bindings, from its own repository.
 # We integrate with these tightly, so often it makes sense to pin a
 # version from Git rather than a release.
--e "git+https://github.com/zulip/python-zulip-api.git@0.3.9#egg=zulip==0.3.9_git&subdirectory=zulip"
--e "git+https://github.com/zulip/python-zulip-api.git@0.3.9#egg=zulip_bots==0.3.9+git&subdirectory=zulip_bots"
+-e "git+https://github.com/zulip/python-zulip-api.git@0.4.3#egg=zulip==0.4.3_git&subdirectory=zulip"
+-e "git+https://github.com/zulip/python-zulip-api.git@0.4.3#egg=zulip_bots==0.4.3+git&subdirectory=zulip_bots"
 
 # Used for Hesiod lookups, etc.
 py3dns==3.1.0
 
-# Needed for LDAP integration
-pyldap==2.4.37
-
 # Install Python Social Auth
-social-auth-app-django==1.2.0
+social-auth-app-django==2.1.0
 
 # Needed for messages' rendered content parsing in push notifications.
-lxml==4.1.0
+lxml==4.2.1
 
 # Needed for 2-factor authentication
-django-two-factor-auth==1.6.2
-twilio==6.9.0
+django-two-factor-auth==1.7.0
+twilio==6.11.0
+
+# Needed for processing payments (in zilencer)
+stripe==1.79.1
+
+# Needed for serving uploaded files from nginx but perform auth checks in django.
+django-sendfile==0.3.11
+
+# For checking whether email of the user is from a disposable email provider.
+disposable-email-domains==0.0.23

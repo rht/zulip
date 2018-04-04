@@ -31,8 +31,7 @@ from django.core.validators import validate_email, URLValidator
 from typing import Callable, Iterable, Optional, Tuple, TypeVar, Text
 
 from zerver.lib.request import JsonableError
-
-Validator = Callable[[str, object], Optional[str]]
+from zerver.lib.types import Validator
 
 def check_string(var_name: str, val: object) -> Optional[str]:
     if not isinstance(val, str):
@@ -40,13 +39,18 @@ def check_string(var_name: str, val: object) -> Optional[str]:
     return None
 
 def check_short_string(var_name: str, val: object) -> Optional[str]:
+    return check_capped_string(var_name, val, 50)
+
+def check_capped_string(var_name: str, val: object, max_length: int) -> Optional[str]:
     if not isinstance(val, str):
         return _('%s is not a string') % (var_name,)
-    max_length = 200
     if len(val) >= max_length:
         return _("{var_name} is longer than {max_length}.".format(
             var_name=var_name, max_length=max_length))
     return None
+
+def check_long_string(var_name: str, val: object) -> Optional[str]:
+    return check_capped_string(var_name, val, 500)
 
 def check_int(var_name: str, val: object) -> Optional[str]:
     if not isinstance(val, int):
@@ -90,7 +94,8 @@ def check_list(sub_validator: Optional[Validator], length: Optional[int]=None) -
         return None
     return f
 
-def check_dict(required_keys: Iterable[Tuple[str, Validator]],
+def check_dict(required_keys: Iterable[Tuple[str, Validator]]=[],
+               value_validator: Optional[Validator]=None,
                _allow_only_listed_keys: bool=False) -> Validator:
     def f(var_name: str, val: object) -> Optional[str]:
         if not isinstance(val, dict):
@@ -104,6 +109,13 @@ def check_dict(required_keys: Iterable[Tuple[str, Validator]],
             error = sub_validator(vname, val[k])
             if error:
                 return error
+
+        if value_validator:
+            for key in val:
+                vname = '%s contains a value that' % (var_name,)
+                error = value_validator(vname, val[key])
+                if error:
+                    return error
 
         if _allow_only_listed_keys:
             delta_keys = set(val.keys()) - set(x[0] for x in required_keys)
@@ -148,9 +160,15 @@ def validate_login_email(email: Text) -> None:
     except ValidationError as err:
         raise JsonableError(str(err.message))
 
-def check_url(var_name: str, val: Text) -> None:
+def check_url(var_name: str, val: object) -> Optional[str]:
+    # First, ensure val is a string
+    string_msg = check_string(var_name, val)
+    if string_msg is not None:
+        return string_msg
+    # Now, validate as URL
     validate = URLValidator()
     try:
         validate(val)
+        return None
     except ValidationError as err:
-        raise JsonableError(str(err.message))
+        return _('%s is not a URL') % (var_name,)

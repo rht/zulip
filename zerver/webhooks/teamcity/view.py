@@ -8,10 +8,10 @@ from django.db.models import Q
 from django.http import HttpRequest, HttpResponse
 
 from zerver.decorator import api_key_only_webhook_view
-from zerver.lib.actions import check_send_private_message, \
-    check_send_stream_message
+from zerver.lib.actions import check_send_private_message
 from zerver.lib.request import REQ, has_request_variables
 from zerver.lib.response import json_error, json_success
+from zerver.lib.webhooks.common import check_send_webhook_message
 from zerver.models import Realm, UserProfile
 
 def guess_zulip_user_from_teamcity(teamcity_username: str, realm: Realm) -> Optional[UserProfile]:
@@ -38,8 +38,7 @@ def get_teamcity_property_value(property_list: List[Dict[str, str]], name: str) 
 @api_key_only_webhook_view('Teamcity')
 @has_request_variables
 def api_teamcity_webhook(request: HttpRequest, user_profile: UserProfile,
-                         payload: Dict[str, Any]=REQ(argument_type='body'),
-                         stream: str=REQ(default='teamcity')) -> HttpResponse:
+                         payload: Dict[str, Any]=REQ(argument_type='body')) -> HttpResponse:
     message = payload['build']
 
     build_name = message['buildFullName']
@@ -52,14 +51,14 @@ def api_teamcity_webhook(request: HttpRequest, user_profile: UserProfile,
 
     if build_result == 'success':
         if build_result_delta == 'fixed':
-            status = 'has been fixed! :thumbsup:'
+            status = 'has been fixed! :thumbs_up:'
         else:
-            status = 'was successful! :thumbsup:'
+            status = 'was successful! :thumbs_up:'
     elif build_result == 'failure':
         if build_result_delta == 'broken':
-            status = 'is broken with status %s! :thumbsdown:' % (build_status,)
+            status = 'is broken with status %s! :thumbs_down:' % (build_status,)
         else:
-            status = 'is still broken with status %s! :thumbsdown:' % (build_status,)
+            status = 'is still broken with status %s! :thumbs_down:' % (build_status,)
     elif build_result == 'running':
         status = 'has started.'
     else:
@@ -97,5 +96,5 @@ def api_teamcity_webhook(request: HttpRequest, user_profile: UserProfile,
 
         return json_success()
 
-    check_send_stream_message(user_profile, request.client, stream, topic, body)
+    check_send_webhook_message(request, user_profile, topic, body)
     return json_success()

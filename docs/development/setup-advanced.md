@@ -4,13 +4,18 @@ Contents:
 
 * [Installing directly on Ubuntu](#installing-directly-on-ubuntu)
 * [Installing manually on Linux](#installing-manually-on-linux)
+* [Installing directly on cloud9](#installing-on-cloud9)
 * [Using Docker (experimental)](#using-docker-experimental)
 
 ## Installing directly on Ubuntu
 
-Start by [cloning your fork of the zulip repository][zulip-rtd-git-cloning]:
+Start by [cloning your fork of the Zulip repository][zulip-rtd-git-cloning]
+and [connecting the Zulip upstream repository][zulip-rtd-git-connect]:
 
-`git clone --config pull.rebase https://github.com/YOURUSERNAME/zulip.git`
+```
+git clone --config pull.rebase https://github.com/YOURUSERNAME/zulip.git
+git remote add -f upstream https://github.com/zulip/zulip.git
+```
 
 If you'd like to install a Zulip development environment on a computer
 that's already running Ubuntu 16.04 Xenial or Ubuntu 14.04 Trusty, you
@@ -62,9 +67,13 @@ Install the following non-Python dependencies:
 
 #### Using the official Ubuntu repositories, PGroonga PPA and `tsearch-extras` deb package:
 
-Start by [cloning your fork of the zulip repository][zulip-rtd-git-cloning]:
+Start by [cloning your fork of the Zulip repository][zulip-rtd-git-cloning]
+and [connecting the Zulip upstream repository][zulip-rtd-git-connect]:
 
-`git clone --config pull.rebase https://github.com/YOURUSERNAME/zulip.git`
+```
+git clone --config pull.rebase https://github.com/YOURUSERNAME/zulip.git
+git remote add -f upstream https://github.com/zulip/zulip.git
+```
 
 ```
 sudo apt-get install closure-compiler libfreetype6-dev libffi-dev \
@@ -80,6 +89,8 @@ sudo apt-get update
 sudo apt-get install postgresql-9.3-pgroonga
 # On 16.04
 sudo apt-get install postgresql-9.5-pgroonga
+# On 17.04 or 17.10
+sudo apt-get install postgresql-9.6-pgroonga
 
 # If using Debian, follow the instructions here: http://pgroonga.github.io/install/debian.html
 
@@ -109,7 +120,7 @@ sudo dpkg -i postgresql-9.4-tsearch-extras_0.1_amd64.deb
 
 # If on 16.04 or stretch
 wget https://launchpad.net/~tabbott/+archive/ubuntu/zulip/+files/postgresql-9.5-tsearch-extras_0.2_amd64.deb
-sudo dpkg -i postgresql-9.5-tsearch-extras_0.2_amd64.deb
+sudo dpkg -i postgresql-9.5-tsearch-extras_0.3_amd64.deb
 ```
 
 Alternatively, you can always build the package from [tsearch-extras
@@ -121,9 +132,13 @@ Now continue with the [All Systems](#all-systems) instructions below.
 
 [zulip-ppa]: https://launchpad.net/~tabbott/+archive/ubuntu/zulip/+packages
 
-Start by [cloning your fork of the zulip repository][zulip-rtd-git-cloning]:
+Start by [cloning your fork of the Zulip repository][zulip-rtd-git-cloning]
+and [connecting the Zulip upstream repository][zulip-rtd-git-connect]:
 
-`git clone --config pull.rebase https://github.com/YOURUSERNAME/zulip.git`
+```
+git clone --config pull.rebase https://github.com/YOURUSERNAME/zulip.git
+git remote add -f upstream https://github.com/zulip/zulip.git
+```
 
 ```
 sudo add-apt-repository ppa:tabbott/zulip
@@ -142,9 +157,13 @@ Now continue with the [All Systems](#all-systems) instructions below.
 These instructions are experimental and may have bugs; patches
 welcome!
 
-Start by [cloning your fork of the zulip repository][zulip-rtd-git-cloning]:
+Start by [cloning your fork of the Zulip repository][zulip-rtd-git-cloning]
+and [connecting the Zulip upstream repository][zulip-rtd-git-connect]:
 
-`git clone --config pull.rebase https://github.com/YOURUSERNAME/zulip.git`
+```
+git clone --config pull.rebase https://github.com/YOURUSERNAME/zulip.git
+git remote add -f upstream https://github.com/zulip/zulip.git
+```
 
 ```
 sudo dnf install libffi-devel memcached rabbitmq-server \
@@ -160,9 +179,13 @@ Now continue with the [Common to Fedora/CentOS](#common-to-fedora-centos-instruc
 These instructions are experimental and may have bugs; patches
 welcome!
 
-Start by [cloning your fork of the zulip repository][zulip-rtd-git-cloning]:
+Start by [cloning your fork of the Zulip repository][zulip-rtd-git-cloning]
+and [connecting the Zulip upstream repository][zulip-rtd-git-connect]:
 
-`git clone --config pull.rebase https://github.com/YOURUSERNAME/zulip.git`
+```
+git clone --config pull.rebase https://github.com/YOURUSERNAME/zulip.git
+git remote add -f upstream https://github.com/zulip/zulip.git
+```
 
 ```
 # Add user zulip to the system (not necessary if you configured zulip
@@ -219,9 +242,13 @@ Now continue with the [Common to Fedora/CentOS](#common-to-fedora-centos-instruc
 These instructions are experimental and may have bugs; patches
 welcome!
 
-Start by [cloning your fork of the zulip repository][zulip-rtd-git-cloning]:
+Start by [cloning your fork of the Zulip repository][zulip-rtd-git-cloning]
+and [connecting the Zulip upstream repository][zulip-rtd-git-connect]:
 
-`git clone --config pull.rebase https://github.com/YOURUSERNAME/zulip.git`
+```
+git clone --config pull.rebase https://github.com/YOURUSERNAME/zulip.git
+git remote add -f upstream https://github.com/zulip/zulip.git
+```
 
 ```
 doas pkg_add sudo bash gcc postgresql-server redis rabbitmq \
@@ -254,9 +281,13 @@ Finally continue with the [All Systems](#all-systems) instructions below.
 
 ### Common to Fedora/CentOS instructions
 
-Start by [cloning your fork of the zulip repository][zulip-rtd-git-cloning]:
+Start by [cloning your fork of the Zulip repository][zulip-rtd-git-cloning]
+and [connecting the Zulip upstream repository][zulip-rtd-git-connect]:
 
-`git clone --config pull.rebase https://github.com/YOURUSERNAME/zulip.git`
+```
+git clone --config pull.rebase https://github.com/YOURUSERNAME/zulip.git
+git remote add -f upstream https://github.com/zulip/zulip.git
+```
 
 ```
 # Build and install postgres tsearch-extras module
@@ -373,11 +404,63 @@ proxy in the environment as follows:
  yarn config set https-proxy http://proxy_host:port
  ```
 
+## Installing on cloud9
+
+AWS Cloud9 is a cloud-based integrated development environment (IDE)
+that lets you write, run, and debug your code with just a browser. It
+includes a code editor, debugger, and terminal.
+
+This section documents how to setup the Zulip development environment
+in a cloud9 workspace.  If you don't have an existing cloud9 account,
+you can sign up [here](https://aws.amazon.com/cloud9/).
+
+* Create a Workspace, and select the blank template.
+* Resize the workspace to be 1GB of memory and 4GB of disk
+  space. (This is under free limit for both the old Cloud9 and the AWS
+  Free Tier).
+* Clone the zulip repo: `git clone --config pull.rebase
+  https://github.com/<your-username>/zulip.git`
+* Restart rabbitmq-server since its broken on cloud9: `sudo service
+  rabbitmq-server restart`.
+* And run provision `cd zulip && ./tools/provision`, once this is done.
+* Activate the zulip virtual environment by `source
+  /srv/zulip-py3-venv/bin/activate` or by opening a new terminal.
+
+#### Install zulip-cloud9
+
+There's an NPM package, `zulip-cloud9`, that provides a wrapper around
+the Zulip development server for use in the Cloud9 environment.
+
+Note: `npm i -g zulip-cloud9` does not work in zulip's virtual
+environment.  Although by default, any packages installed in workspace
+folder (i.e. the top level folder) are added to `$PATH`.
+
+```bash
+cd .. # switch to workspace folder if you are in zulip directory
+npm i zulip-cloud9
+zulip-dev start # to start the development server
+```
+
+If you get error of the form `bash: cannot find command zulip-dev`,
+you need to start a new terminal.
+
+Your development server would be running at
+`https://<workspace-name>-<username>.c9users.io` on port 8080.  You
+dont need to add `:8080` to your url, since the cloud9 proxy should
+automatically forward the connection. You might want to visit
+[zulip-cloud9 repo](https://github.com/cPhost/zulip-cloud9) and it's
+[wiki](https://github.com/cPhost/zulip-cloud9/wiki) for more info on
+how to use zulip-cloud9 package.
+
 ## Using Docker (experimental)
 
-Start by [cloning your fork of the zulip repository][zulip-rtd-git-cloning]:
+Start by [cloning your fork of the Zulip repository][zulip-rtd-git-cloning]
+and [connecting the Zulip upstream repository][zulip-rtd-git-connect]:
 
-`git clone --config pull.rebase https://github.com/YOURUSERNAME/zulip.git`
+```
+git clone --config pull.rebase https://github.com/YOURUSERNAME/zulip.git
+git remote add -f upstream https://github.com/zulip/zulip.git
+```
 
 The docker instructions for development are experimental, so they may
 have bugs.  If you try them and run into any issues, please report
@@ -474,3 +557,4 @@ the Vagrant workflow and less documented; please contribute to this
 guide and the Docker tooling if you are using Docker to develop Zulip!
 
 [zulip-rtd-git-cloning]: ../git/cloning.html#step-1b-clone-to-your-machine
+[zulip-rtd-git-connect]: ../git/cloning.html#step-1c-connect-your-fork-to-zulip-upstream

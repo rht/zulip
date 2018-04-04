@@ -135,6 +135,12 @@ class PermissionTest(ZulipTestCase):
         result = self.client_patch('/json/users/hamlet@zulip.com', req)
         self.assert_json_error(result, 'Insufficient permission')
 
+    def test_user_cannot_promote_to_admin(self) -> None:
+        self.login(self.example_email("hamlet"))
+        req = dict(is_admin=ujson.dumps(True))
+        result = self.client_patch('/json/users/hamlet@zulip.com', req)
+        self.assert_json_error(result, 'Insufficient permission')
+
     def test_admin_user_can_change_full_name(self) -> None:
         new_name = 'new name'
         self.login(self.example_email("iago"))
@@ -181,6 +187,7 @@ class AdminCreateUserTest(ZulipTestCase):
 
         admin = self.example_user('hamlet')
         admin_email = admin.email
+        realm = admin.realm
         self.login(admin_email)
         do_change_is_admin(admin, True)
 
@@ -220,11 +227,9 @@ class AdminCreateUserTest(ZulipTestCase):
             short_name='Romeo',
         ))
         self.assert_json_error(result,
-                               "Email 'romeo@not-zulip.com' not allowed for realm 'zulip'")
+                               "Email 'romeo@not-zulip.com' not allowed in this organization")
 
         RealmDomain.objects.create(realm=get_realm('zulip'), domain='zulip.net')
-
-        # HAPPY PATH STARTS HERE
         valid_params = dict(
             email='romeo@zulip.net',
             password='xxxx',
@@ -239,11 +244,19 @@ class AdminCreateUserTest(ZulipTestCase):
         self.assertEqual(new_user.full_name, 'Romeo Montague')
         self.assertEqual(new_user.short_name, 'Romeo')
 
-        # One more error condition to test--we can't create
-        # the same user twice.
+        # we can't create the same user twice.
         result = self.client_post("/json/users", valid_params)
         self.assert_json_error(result,
                                "Email 'romeo@zulip.net' already in use")
+
+        # Don't allow user to sign up with disposable email.
+        realm.restricted_to_domain = False
+        realm.disallow_disposable_email_addresses = True
+        realm.save()
+
+        valid_params["email"] = "abc@mailnator.com"
+        result = self.client_post("/json/users", valid_params)
+        self.assert_json_error(result, "Disposable email addresses are not allowed in this organization")
 
 class UserProfileTest(ZulipTestCase):
     def test_get_emails_from_user_ids(self) -> None:
@@ -341,11 +354,11 @@ class ActivateTest(ZulipTestCase):
         do_change_is_admin(admin, True)
         self.login(self.example_email("othello"))
 
-        # Can not deactivate a user with the bot api
+        # Cannot deactivate a user with the bot api
         result = self.client_delete('/json/bots/hamlet@zulip.com')
         self.assert_json_error(result, 'No such bot')
 
-        # Can not deactivate a nonexistent user.
+        # Cannot deactivate a nonexistent user.
         result = self.client_delete('/json/users/nonexistent@zulip.com')
         self.assert_json_error(result, 'No such user')
 
@@ -355,7 +368,7 @@ class ActivateTest(ZulipTestCase):
         result = self.client_delete('/json/users/othello@zulip.com')
         self.assert_json_error(result, 'Cannot deactivate the only organization administrator')
 
-        # Can not reactivate a nonexistent user.
+        # Cannot reactivate a nonexistent user.
         result = self.client_post('/json/users/nonexistent@zulip.com/reactivate')
         self.assert_json_error(result, 'No such user')
 
@@ -364,11 +377,11 @@ class ActivateTest(ZulipTestCase):
         do_change_is_admin(non_admin, False)
         self.login(self.example_email("othello"))
 
-        # Can not deactivate a user with the users api
+        # Cannot deactivate a user with the users api
         result = self.client_delete('/json/users/hamlet@zulip.com')
         self.assert_json_error(result, 'Insufficient permission')
 
-        # Can not reactivate a user
+        # Cannot reactivate a user
         result = self.client_post('/json/users/hamlet@zulip.com/reactivate')
         self.assert_json_error(result, 'Insufficient permission')
 

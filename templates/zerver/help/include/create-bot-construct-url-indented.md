@@ -1,13 +1,4 @@
-    Next, on your {{ settings_html|safe }},
-    [create a bot](/help/add-a-bot-or-integration) for
-    {{ integration_display_name }}. Make sure that you select
-    **Incoming webhook** as the **Bot type**:
-
-    ![](/static/images/help/bot_types.png)
-
-    The API key for an incoming webhook bot cannot be used to read messages out
-    of Zulip. Thus, using an incoming webhook bot lowers the security risk of
-    exposing the bot's API key to a third-party service.
+    {!create-a-bot-indented.md!}
 
     Construct the URL for the {{ integration_display_name }}
     bot using the bot's API key and the desired stream name:
@@ -16,4 +7,8 @@
 
     Modify the parameters of the URL above, where `api_key` is the API key
     of your Zulip bot, and `stream` is the stream name you want the
-    notifications sent to.
+    notifications sent to. If you do not specify a `stream`, the bot will
+    send notifications via PMs to the creator of the bot.
+
+    If you'd like this integration to always send to the topic
+    `your_topic`, just add `&topic=your_topic` to the end of the URL.

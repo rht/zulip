@@ -5,7 +5,7 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.forms import SetPasswordForm, AuthenticationForm, \
     PasswordResetForm
 from django.core.exceptions import ValidationError
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.core.validators import validate_email
 from django.db.models.query import QuerySet
 from django.utils.translation import ugettext as _
@@ -24,8 +24,8 @@ from zerver.lib.request import JsonableError
 from zerver.lib.send_email import send_email, FromAddress
 from zerver.lib.subdomains import get_subdomain, user_matches_subdomain, is_root_domain_available
 from zerver.lib.users import check_full_name
-from zerver.models import Realm, get_user, UserProfile, \
-    get_realm, email_to_domain, email_allowed_for_realm
+from zerver.models import Realm, get_user, UserProfile, get_realm, email_to_domain, \
+    email_allowed_for_realm, DisposableEmailError, DomainNotAllowedForRealmError
 from zproject.backends import email_auth_enabled
 
 import logging
@@ -66,12 +66,12 @@ def check_subdomain_available(subdomain: str) -> None:
         if is_root_domain_available():
             return
         raise ValidationError(error_strings['unavailable'])
-    if len(subdomain) < 3:
-        raise ValidationError(error_strings['too short'])
     if subdomain[0] == '-' or subdomain[-1] == '-':
         raise ValidationError(error_strings['extremal dash'])
     if not re.match('^[a-z0-9-]*$', subdomain):
         raise ValidationError(error_strings['bad character'])
+    if len(subdomain) < 3:
+        raise ValidationError(error_strings['too short'])
     if is_reserved_subdomain(subdomain) or \
        get_realm(subdomain) is not None:
         raise ValidationError(error_strings['unavailable'])
@@ -145,11 +145,15 @@ class HomepageForm(forms.Form):
                                     "from the organization "
                                     "administrator.").format(email=email))
 
-        if not email_allowed_for_realm(email, realm):
+        try:
+            email_allowed_for_realm(email, realm)
+        except DomainNotAllowedForRealmError:
             raise ValidationError(
                 _("Your email address, {email}, is not in one of the domains "
                   "that are allowed to register for accounts in this organization.").format(
                       string_id=realm.string_id, email=email))
+        except DisposableEmailError:
+            raise ValidationError(_("Please use your real email address."))
 
         validate_email_for_realm(realm, email)
 
@@ -175,17 +179,16 @@ class LoggingSetPasswordForm(SetPasswordForm):
 
 class ZulipPasswordResetForm(PasswordResetForm):
     def save(self,
-             domain_override=None,  # type: Optional[bool]
-             subject_template_name='registration/password_reset_subject.txt',  # type: Text
-             email_template_name='registration/password_reset_email.html',  # type: Text
-             use_https=False,  # type: bool
-             token_generator=default_token_generator,  # type: PasswordResetTokenGenerator
-             from_email=None,  # type: Optional[Text]
-             request=None,  # type: HttpRequest
-             html_email_template_name=None,  # type: Optional[Text]
-             extra_email_context=None  # type: Optional[Dict[str, Any]]
-             ):
-        # type: (...) -> None
+             domain_override: Optional[bool]=None,
+             subject_template_name: Text='registration/password_reset_subject.txt',
+             email_template_name: Text='registration/password_reset_email.html',
+             use_https: bool=False,
+             token_generator: PasswordResetTokenGenerator=default_token_generator,
+             from_email: Optional[Text]=None,
+             request: HttpRequest=None,
+             html_email_template_name: Optional[Text]=None,
+             extra_email_context: Optional[Dict[str, Any]]=None
+             ) -> None:
         """
         If the email address has an account in the target realm,
         generates a one-use only link for resetting password and sends
@@ -205,10 +208,11 @@ class ZulipPasswordResetForm(PasswordResetForm):
             logging.info("Password reset attempted for %s even though password auth is disabled." % (email,))
             return
 
+        user = None  # type: Optional[UserProfile]
         try:
             user = get_user(email, realm)
         except UserProfile.DoesNotExist:
-            user = None
+            pass
 
         context = {
             'email': email,
@@ -217,7 +221,7 @@ class ZulipPasswordResetForm(PasswordResetForm):
 
         if user is not None:
             token = token_generator.make_token(user)
-            uid = urlsafe_base64_encode(force_bytes(user.id))
+            uid = urlsafe_base64_encode(force_bytes(user.id)).decode('ascii')
             endpoint = reverse('django.contrib.auth.views.password_reset_confirm',
                                kwargs=dict(uidb64=uid, token=token))
 
@@ -280,8 +284,7 @@ class OurAuthenticationForm(AuthenticationForm):
 
         return self.cleaned_data
 
-    def add_prefix(self, field_name):
-        # type: (Text) -> Text
+    def add_prefix(self, field_name: Text) -> Text:
         """Disable prefix, since Zulip doesn't use this Django forms feature
         (and django-two-factor does use it), and we'd like both to be
         happy with this form.

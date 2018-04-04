@@ -6,7 +6,7 @@ within the client, not original Markdown.
 
 Zulip has two implementations of Bugdown.  The backend implementation
 at `zerver/lib/bugdown/` is based on
-[Python-Markdown](https://pythonhosted.org/Markdown/) and is used to
+[Python-Markdown](https://pypi.python.org/pypi/Markdown) and is used to
 authoritatively render messages to HTML (and implements
 slow/expensive/complex features like querying the Twitter API to
 render tweets nicely).  The frontend implementation is in JavaScript,
@@ -73,11 +73,19 @@ This procedure prevents any server-side rendering.  If you don't do
 this, backend will likely render the Markdown you're testing and swap
 it in before you can see the frontend's rendering.
 
+If you are working on a feature that breaks multiple testcases, and want
+to debug the testcases one by one, you can add `"ignore": true` to any
+testcases in `markdown_test_cases.json` that you want to ignore. This
+is a workaround due to lack of comments support in JSON. Revert your
+"ignore" changes before committing. After this, you can run the frontend
+tests with `tools/test-js-with-node markdown` and backend tests with
+`tools/test-backend zerver.tests.test_bugdown.BugdownTest.test_bugdown_fixtures`.
+
 ## Changing Zulip's markdown processor
 
 First, you will likely find these third-party resources helpful:
 
-* **[Python-Markdown Extensions API](https://pythonhosted.org/Markdown/extensions/api.html)**
+* **[Python-Markdown Extensions API](https://pypi.python.org/pypi/Markdown)**
   is used by Zulip to make the above listed changes to markdown syntax.
 * **[Python's XML ElementTree](https://docs.python.org/3/library/xml.etree.elementtree.html)**
   is the part of the Python standard library used by Python Markdown

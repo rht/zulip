@@ -32,13 +32,6 @@ function mention_button_refers_to_me(elem) {
     return false;
 }
 
-function stringify_time(time) {
-    if (page_params.twenty_four_hour_time) {
-        return time.toString('HH:mm');
-    }
-    return time.toString('h:mm TT');
-}
-
 function same_day(earlier_msg, later_msg) {
     if (earlier_msg === undefined || later_msg === undefined) {
         return false;
@@ -81,22 +74,20 @@ function add_display_time(group, message_container, prev) {
     }
 
     if (message_container.timestr === undefined) {
-        message_container.timestr = stringify_time(time);
+        message_container.timestr = timerender.stringify_time(time);
     }
 }
 
 function set_topic_edit_properties(group, message) {
+    group.realm_allow_message_editing = page_params.realm_allow_message_editing;
     group.always_visible_topic_edit = false;
     group.on_hover_topic_edit = false;
-    if (!page_params.realm_allow_message_editing) {
-        return;
-    }
 
     // Messages with no topics should always have an edit icon visible
     // to encourage updating them. Admins can also edit any topic.
     if (message.subject === compose.empty_topic_placeholder()) {
         group.always_visible_topic_edit = true;
-    } else if (page_params.is_admin) {
+    } else if (page_params.is_admin || page_params.realm_allow_community_topic_editing) {
         group.on_hover_topic_edit = true;
     }
 }
@@ -153,24 +144,32 @@ MessageListView.prototype = {
             var today = new XDate();
             message_container.last_edit_timestr =
                 (timerender.render_date(last_edit_time, undefined, today))[0].textContent
-                + " at " + stringify_time(last_edit_time);
+                + " at " + timerender.stringify_time(last_edit_time);
         }
     },
 
     add_subscription_marker: function MessageListView__add_subscription_marker(
                                 group, last_msg_container, first_msg_container) {
-        if (last_msg_container !== undefined &&
-            first_msg_container.msg.historical !== last_msg_container.msg.historical) {
+        if (last_msg_container === undefined) {
+            return;
+        }
+
+        var last_subscribed = !last_msg_container.msg.historical;
+        var first_subscribed = !first_msg_container.msg.historical;
+        var stream = first_msg_container.msg.stream;
+
+        if (!last_subscribed && first_subscribed) {
             group.bookend_top = true;
-            if (first_msg_container.msg.historical) {
-                group.unsubscribed = first_msg_container.msg.stream;
-                group.bookend_content =
-                    this.list.unsubscribed_bookend_content(first_msg_container.msg.stream);
-            } else {
-                group.subscribed = first_msg_container.msg.stream;
-                group.bookend_content =
-                    this.list.subscribed_bookend_content(first_msg_container.msg.stream);
-            }
+            group.subscribed = stream;
+            group.bookend_content = this.list.subscribed_bookend_content(stream);
+            return;
+        }
+
+        if (last_subscribed && !first_subscribed) {
+            group.bookend_top = true;
+            group.unsubscribed = stream;
+            group.bookend_content = this.list.unsubscribed_bookend_content(stream);
+            return;
         }
     },
 
@@ -425,25 +424,17 @@ MessageListView.prototype = {
             }
 
             // Display emoji (including realm emoji) as text if
-            // page_params.emoji_alt_code is set
-            if (page_params.emoji_alt_code) {
+            // page_params.emojiset is 'text'.
+            if (page_params.emojiset === 'text') {
                 row.find(".emoji").replaceWith(function () {
                     var text = $(this).attr("title");
                     return ":" + text + ":";
                 });
-             }
+            }
 
             var id = rows.id(row);
             message_edit.maybe_show_edit(row, id);
 
-            var e = $.Event('message_rendered.zulip', {target: row});
-            try {
-                $(document).trigger(e);
-            } catch (ex) {
-                blueslip.error('Problem with message rendering',
-                               {message_id: rows.id($(row))},
-                               ex.stack);
-            }
         });
     },
 
@@ -467,8 +458,6 @@ MessageListView.prototype = {
         var list = this.list; // for convenience
         var table_name = this.table_name;
         var table = rows.get_table(table_name);
-        // we we record if last_message_was_selected before updating the table
-        var last_message_was_selected = rows.id(rows.last_visible()) === list.selected_id();
         var orig_scrolltop_offset;
         var message_containers;
 
@@ -608,6 +597,21 @@ MessageListView.prototype = {
             new_dom_elements = new_dom_elements.concat(rendered_groups);
 
             self._post_process_dom_messages(dom_messages.get());
+
+            // This next line is a workaround for a weird scrolling
+            // bug on Chrome.  Basically, in Chrome 64, we had a
+            // highly reproducible bug where if you hit the "End" key
+            // 5 times in a row in a `near:1` narrow (or any other
+            // narrow with enough content below to try this), the 5th
+            // time (because RENDER_WINDOW_SIZE / batch_size = 4,
+            // i.e. the first time we need to rerender to show the
+            // message "End" jumps to) would trigger an unexpected
+            // scroll, resulting in some chaotic scrolling and
+            // additional fetches (from bottom_whitespace ending up in
+            // the view).  During debugging, we found that this adding
+            // this next line seems to prevent the Chrome bug from firing.
+            message_viewport.scrollTop();
+
             table.append(rendered_groups);
             condense.condense_and_collapse(dom_messages);
         }
@@ -646,13 +650,12 @@ MessageListView.prototype = {
         }
 
         if (list === current_msg_list && messages_are_new) {
-            self._maybe_autoscroll(new_dom_elements, last_message_was_selected);
+            self._maybe_autoscroll(new_dom_elements);
         }
     },
 
 
-    _maybe_autoscroll: function MessageListView__maybe_autoscroll(rendered_elems,
-                                                                  last_message_was_selected) {
+    _maybe_autoscroll: function MessageListView__maybe_autoscroll(rendered_elems) {
         // If we are near the bottom of our feed (the bottom is visible) and can
         // scroll up without moving the pointer out of the viewport, do so, by
         // up to the amount taken up by the new message.
@@ -678,14 +681,6 @@ MessageListView.prototype = {
             }
         }, this);
 
-        // autoscroll_forever: if we're on the last message, keep us on the last message
-        if (last_message_was_selected && page_params.autoscroll_forever) {
-            this.list.select_id(this.list.last().id, {from_rendering: true});
-            navigate.scroll_to_selected();
-            this.list.reselect_selected_id();
-            return;
-        }
-
         var selected_row = this.selected_row();
         var last_visible = rows.last_visible();
 
@@ -697,16 +692,6 @@ MessageListView.prototype = {
         var selected_row_offset = selected_row.offset().top;
         var info = message_viewport.message_viewport_info();
         var available_space_for_scroll = selected_row_offset - info.visible_top;
-
-        var rows_offset = rows.last_visible().offset().top - this.list.selected_row().offset().top;
-
-        // autoscroll_forever: if we've sent a message, move pointer at least that far.
-        if (page_params.autoscroll_forever && id_of_last_message_sent_by_us > -1 &&
-            rows_offset < (message_viewport.height())) {
-            this.list.select_id(id_of_last_message_sent_by_us, {from_rendering: true});
-            navigate.scroll_to_selected();
-            return;
-        }
 
         // Don't scroll if we can't move the pointer up.
         if (available_space_for_scroll <= 0) {
@@ -819,13 +804,13 @@ MessageListView.prototype = {
     },
 
     rerender_preserving_scrolltop: function MessageListView__rerender_preserving_scrolltop() {
-        // scrolltop_offset is the number of pixels between the top of the
+        // old_offset is the number of pixels between the top of the
         // viewable window and the selected message
-        var scrolltop_offset;
+        var old_offset;
         var selected_row = this.selected_row();
         var selected_in_view = (selected_row.length > 0);
         if (selected_in_view) {
-            scrolltop_offset = selected_row.offset().top;
+            old_offset = selected_row.offset().top;
         }
 
         this.clear_table();
@@ -839,10 +824,8 @@ MessageListView.prototype = {
             if (this.selected_row().length === 0 && this.list.selected_id() > -1) {
                 this.list.select_id(this.list.selected_id(), {use_closest: true});
             }
-            // Must get this.list.selected_row() again since it is now a new DOM element
-            message_viewport.scrollTop(
-                message_viewport.scrollTop() +
-                    this.selected_row().offset().top - scrolltop_offset);
+
+            message_viewport.set_message_offset(old_offset);
         }
     },
 
