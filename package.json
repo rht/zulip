@@ -31,7 +31,7 @@
     "handlebars-loader": "^1.7.1",
     "html-webpack-plugin": "^4.0.0-beta.8",
     "i18next": "^19.0.0",
-    "jquery": "^3.4.1",
+    "jquery": "^3.5.0",
     "jquery-caret-plugin": "^1.5.2",
     "jquery-validation": "^1.19.0",
     "katex": "^0.11.1",
