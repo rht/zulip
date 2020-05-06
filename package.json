@@ -31,7 +31,7 @@
     "handlebars-loader": "^1.7.1",
     "html-webpack-plugin": "^4.0.0-beta.8",
     "i18next": "^19.0.0",
-    "jquery": "^3.4.1",
+    "jquery": "^3.5.0",
     "jquery-caret-plugin": "^1.5.2",
     "jquery-validation": "^1.19.0",
     "katex": "^0.11.1",
@@ -39,7 +39,7 @@
     "moment": "^2.24.0",
     "moment-timezone": "^0.5.25",
     "optimize-css-assets-webpack-plugin": "^5.0.3",
-    "plotly.js": "^1.48.1",
+    "plotly.js": "^1.54.0",
     "postcss-calc": "^7.0.1",
     "postcss-extend-rule": "^3.0.0",
     "postcss-loader": "^3.0.0",
@@ -66,7 +66,8 @@
     "webpack4-bundle-tracker": "^0.0.1-beta",
     "winchan": "^0.2.1",
     "xdate": "^0.8.2",
-    "zxcvbn": "^4.4.2"
+    "zxcvbn": "^4.4.2",
+    "snyk": "^1.319.0"
   },
   "devDependencies": {
     "@types/html-minifier": "^3.5.3",
@@ -100,10 +101,13 @@
     "postinstall": "rm -rf ./var/webpack-cache",
     "lint": "eslint --quiet --cache",
     "lint-fix": "eslint --quiet --fix",
-    "lint-loud": "eslint static/js frontend_tests --cache"
+    "lint-loud": "eslint static/js frontend_tests --cache",
+    "snyk-protect": "snyk protect",
+    "prepare": "yarn run snyk-protect"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/zulip/zulip.git"
-  }
+  },
+  "snyk": true
 }
