@@ -46,7 +46,7 @@ class Command(BaseCommand):
 
         for path in options['slack_data_zip']:
             if not os.path.exists(path):
-                raise CommandError(f"Slack data directory not found: '{path}'")
+                raise CommandError(f"Slack data file not found: '{path}'")
 
             print("Converting data ...")
             do_convert_data(path, output_dir, token, threads=num_threads)
