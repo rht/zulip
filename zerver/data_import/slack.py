@@ -1,3 +1,4 @@
+import datetime
 import logging
 import os
 import random
@@ -669,6 +670,7 @@ def convert_slack_workspace_messages(
     zerver_realmemoji: List[ZerverFieldsT],
     domain_name: str,
     output_dir: str,
+    convert_slack_threads: bool,
     chunk_size: int = MESSAGE_BATCH_CHUNK_SIZE,
 ) -> Tuple[List[ZerverFieldsT], List[ZerverFieldsT], List[ZerverFieldsT]]:
     """
@@ -730,6 +732,7 @@ def convert_slack_workspace_messages(
             dm_members,
             domain_name,
             long_term_idle,
+            convert_slack_threads,
         )
 
         message_json = dict(zerver_message=zerver_message, zerver_usermessage=zerver_usermessage)
@@ -809,6 +812,7 @@ def channel_message_to_zerver_message(
     dm_members: DMMembersT,
     domain_name: str,
     long_term_idle: Set[int],
+    convert_slack_threads: bool,
 ) -> Tuple[
     List[ZerverFieldsT],
     List[ZerverFieldsT],
@@ -921,6 +925,9 @@ def channel_message_to_zerver_message(
         has_image = file_info["has_image"]
 
         topic_name = "imported from Slack"
+        if convert_slack_threads and "thread_ts" in message:
+            thread_ts = datetime.datetime.fromtimestamp(float(message["thread_ts"]))
+            topic_name = thread_ts.strftime(r"%Y/%m/%d %H:%M:%S")
 
         zulip_message = build_message(
             topic_name,
@@ -1245,7 +1252,13 @@ def fetch_team_icons(
     return records
 
 
-def do_convert_data(original_path: str, output_dir: str, token: str, threads: int = 6) -> None:
+def do_convert_data(
+    original_path: str,
+    output_dir: str,
+    token: str,
+    threads: int = 6,
+    convert_slack_threads: bool = False,
+) -> None:
     # Subdomain is set by the user while running the import command
     realm_subdomain = ""
     realm_id = 0
@@ -1306,6 +1319,7 @@ def do_convert_data(original_path: str, output_dir: str, token: str, threads: in
         realm["zerver_realmemoji"],
         domain_name,
         output_dir,
+        convert_slack_threads,
     )
 
     # Move zerver_reactions to realm.json file

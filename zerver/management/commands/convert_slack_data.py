@@ -34,6 +34,12 @@ class Command(BaseCommand):
             help="Threads to use in exporting UserMessage objects in parallel",
         )
 
+        parser.add_argument(
+            "--convert-slack-threads",
+            action="store_true",
+            help="Put Slack threads to separate Zulip topics (experimental)",
+        )
+
         parser.formatter_class = argparse.RawTextHelpFormatter
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -54,6 +60,14 @@ class Command(BaseCommand):
         for path in options["slack_data_path"]:
             if not os.path.exists(path):
                 raise CommandError(f"Slack data directory not found: '{path}'")
+            if options["convert_slack_threads"]:
+                print("You specified that Slack threads will be converted to Zulip topics.")
 
             print("Converting data ...")
-            do_convert_data(path, output_dir, token, threads=num_threads)
+            do_convert_data(
+                path,
+                output_dir,
+                token,
+                threads=num_threads,
+                convert_slack_threads=options["convert_slack_threads"],
+            )

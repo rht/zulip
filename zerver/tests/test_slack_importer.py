@@ -931,6 +931,7 @@ class SlackImporter(ZulipTestCase):
             dm_members,
             "domain",
             set(),
+            False,
         )
         # functioning already tested in helper function
         self.assertEqual(zerver_usermessage, [])
@@ -1046,6 +1047,7 @@ class SlackImporter(ZulipTestCase):
                 [],
                 "domain",
                 output_dir=output_dir,
+                convert_slack_threads=False,
                 chunk_size=1,
             )
 
