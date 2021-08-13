@@ -1,3 +1,4 @@
+import datetime
 import logging
 import os
 import random
@@ -971,6 +972,9 @@ def channel_message_to_zerver_message(
         has_image = file_info["has_image"]
 
         topic_name = "imported from Slack"
+        if "thread_ts" in message:
+            thread_ts = datetime.datetime.fromtimestamp(float(message["thread_ts"]))
+            topic_name = thread_ts.strftime(r"%Y/%m/%d %H:%M:%S")
 
         zulip_message = build_message(
             topic_name,
