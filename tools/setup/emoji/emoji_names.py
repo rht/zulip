@@ -47,6 +47,10 @@ EMOJI_NAME_MAPS: Dict[str, Dict[str, Any]] = {
     "1f60e": {"canonical_name": "sunglasses", "aliases": []},
     "1f921": {"canonical_name": "clown", "aliases": []},
     "1f920": {"canonical_name": "cowboy", "aliases": []},
+    "1f929": {
+        "canonical_name": "grinning_face_with_star_eyes",
+        "aliases": ["star_struck"]
+    },
     # https://emojipedia.org/smirking-face/
     "1f60f": {"canonical_name": "smirk", "aliases": ["smug"]},
     "1f612": {"canonical_name": "unamused", "aliases": []},
