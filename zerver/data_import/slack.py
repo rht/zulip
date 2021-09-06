@@ -1130,6 +1130,12 @@ def build_reactions(
         elif emoji_name in realmemoji:
             emoji_code = realmemoji[emoji_name]
             reaction_type = Reaction.REALM_EMOJI
+        elif emoji_name in ["woman-bowing", "man-bowing"]:
+            # We translate Slack's ":woman-bowing:" and ":man-bowing:" to
+            # ":bow:".
+            emoji_name = "bow"
+            emoji_code = name_to_codepoint[emoji_name]
+            reaction_type = Reaction.UNICODE_EMOJI
         else:
             continue
 
