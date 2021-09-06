@@ -1126,11 +1126,17 @@ def build_reactions(
         emoji_name = slack_reaction["name"]
         if emoji_name in slack_emoji_name_to_codepoint:
             emoji_code = slack_emoji_name_to_codepoint[emoji_name]
-            try:
-                zulip_emoji_name = codepoint_to_name[emoji_code]
-            except KeyError:
-                print(f"WARN: Emoji found in iamcal but not Zulip: {emoji_name}")
-                continue
+            if emoji_name in ["woman-bowing", "man-bowing"]:
+                # We translate Slack's ":woman-bowing:" and ":man-bowing:" to
+                # ":bow:".
+                zulip_emoji_name = "bow"
+                emoji_code = "1f647"
+            else:
+                try:
+                    zulip_emoji_name = codepoint_to_name[emoji_code]
+                except KeyError:
+                    print(f"WARN: Emoji found in iamcal but not Zulip: {emoji_name}")
+                    continue
             # Convert Slack emoji name to Zulip emoji name.
             emoji_name = zulip_emoji_name
             reaction_type = Reaction.UNICODE_EMOJI
