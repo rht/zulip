@@ -1131,6 +1131,9 @@ def build_reactions(
                 # ":bow:".
                 zulip_emoji_name = "bow"
                 emoji_code = "1f647"
+            elif emoji_name == "man-gesturing-ok":
+                zulip_emoji_name = "ok_signal"
+                emoji_code = "1f646"
             else:
                 try:
                     zulip_emoji_name = codepoint_to_name[emoji_code]
