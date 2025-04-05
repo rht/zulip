@@ -21,6 +21,9 @@
       inputs.uv2nix.follows = "uv2nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    process-compose-flake.url = "github:Platonic-Systems/process-compose-flake";
+    services-flake.url = "github:juspay/services-flake";
   };
 
   outputs =
@@ -30,6 +33,8 @@
       uv2nix,
       pyproject-nix,
       pyproject-build-systems,
+      process-compose-flake,
+      services-flake,
       ...
     }:
     let
@@ -109,7 +114,7 @@
           ];
         });
         psycopg2 = _prev.psycopg2.overrideAttrs (old: {
-          buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.postgresql_15 ];
+          buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.postgresql_16 ];
           nativeBuildInputs = old.nativeBuildInputs ++ [
             (_final.resolveBuildSystem {
               setuptools = [ ];
@@ -207,6 +212,16 @@
             ]
           );
 
+      # Services
+      servicesMod = (import process-compose-flake.lib { inherit pkgs; }).evalModules {
+        modules = [
+          services-flake.processComposeModules.default
+          {
+            services.postgresql.enable = true;
+          }
+        ];
+      };
+
     in
     {
       # Package a virtual environment as our main application.
@@ -229,6 +244,8 @@
         # It is of course perfectly OK to keep using an impure virtualenv workflow and only use uv2nix to build packages.
         # This devShell simply adds Python and undoes the dependency leakage done by Nixpkgs Python infrastructure.
         impure = pkgs.mkShell {
+          inputsFrom = [ servicesMod.config.services.outputs.devShell ];
+
           packages = [
             python
             pkgs.uv
@@ -289,6 +306,8 @@
               #"libxss1", todo
               pkgs.xorg.xvfb
               # Puppeteer dependencies end here.
+              pkgs.postgresql_16
+              pkgs.postgresql16Packages.pgroonga
 
               virtualenv
               pkgs.uv
