@@ -217,7 +217,7 @@
         modules = [
           services-flake.processComposeModules.default
           {
-            services.postgresql.enable = true;
+            services.postgres."pg1".enable = true;
           }
         ];
       };
@@ -227,15 +227,16 @@
       # Package a virtual environment as our main application.
       #
       # Enable no optional dependencies for production build.
-      packages.x86_64-linux.default = pythonSet.mkVirtualEnv "hello-world-env" workspace.deps.default;
+      #packages.x86_64-linux.default = pythonSet.mkVirtualEnv "zulip-server-env" workspace.deps.default;
+      packages.x86_64-linux.default = servicesMod.config.outputs.package;
 
       # Make hello runnable with `nix run`
-      apps.x86_64-linux = {
-        default = {
-          type = "app";
-          program = "${self.packages.x86_64-linux.default}/bin/hello";
-        };
-      };
+      #apps.x86_64-linux = {
+      #  default = {
+      #    type = "app";
+      #    program = "${self.packages.x86_64-linux.default}/bin/hello";
+      #  };
+      #};
 
       # This example provides two different modes of development:
       # - Impurely using uv to manage virtual environments
@@ -280,6 +281,8 @@
 
           in
           pkgs.mkShell {
+            inputsFrom = [ servicesMod.config.services.outputs.devShell ];
+
             packages = [
               pkgs.memcached
               pkgs.rabbitmq-server
